@@ -186,13 +186,16 @@ export class DeviceStore {
 }
 
 class SlidingWindowRateLimiter {
-  constructor(limit, windowMs) {
+  constructor(limit, windowMs, sweepIntervalMs = windowMs) {
     this.limit = limit;
     this.windowMs = windowMs;
+    this.sweepIntervalMs = sweepIntervalMs;
     this.attempts = new Map();
+    this.lastSweep = 0;
   }
 
   allow(key, now = Date.now()) {
+    this.sweep(now);
     const cutoff = now - this.windowMs;
     const recent = (this.attempts.get(key) ?? []).filter((value) => value > cutoff);
     if (recent.length >= this.limit) {
@@ -203,12 +206,32 @@ class SlidingWindowRateLimiter {
     this.attempts.set(key, recent);
     return true;
   }
+
+  // Periodically drop keys whose buckets have fully expired so the map stays
+  // bounded even for keys that are never revisited.
+  sweep(now = Date.now()) {
+    if (now - this.lastSweep < this.sweepIntervalMs) return;
+    this.lastSweep = now;
+    const cutoff = now - this.windowMs;
+    for (const [key, timestamps] of this.attempts) {
+      if (!timestamps.some((value) => value > cutoff)) {
+        this.attempts.delete(key);
+      }
+    }
+  }
 }
 
 function remoteIP(request, trustProxy) {
   if (trustProxy) {
     const forwarded = request.headers["x-forwarded-for"];
-    if (typeof forwarded === "string") return forwarded.split(",", 1)[0].trim();
+    if (typeof forwarded === "string" && forwarded.length > 0) {
+      // X-Forwarded-For is a client-controlled, comma-separated chain. Only the
+      // last entry is written by our trusted reverse proxy (e.g. nginx's
+      // $proxy_add_x_forwarded_for appends the immediate peer); earlier entries
+      // can be spoofed to rotate the rate-limit key. Trust the last hop only.
+      const hops = forwarded.split(",").map((value) => value.trim()).filter(Boolean);
+      if (hops.length > 0) return hops[hops.length - 1];
+    }
   }
   return request.socket.remoteAddress ?? "unknown";
 }

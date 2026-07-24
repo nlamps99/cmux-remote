@@ -97,6 +97,16 @@ public actor RemoteSessionBridge {
                     Task { await sender(.text(sessionId: sessionId, text: text)) }
                 }
                 remote.session = attached
+                // `sessionManager.attach` suspends this actor, so a reentrant
+                // `.close`/`helloTimedOut` may have removed the entry while we
+                // were awaiting. Re-fetch before writing back: if the session is
+                // gone, detach the freshly attached session instead of
+                // resurrecting a stale entry that removeSession() can never
+                // clean up.
+                guard sessions[sessionId] != nil else {
+                    await sessionManager.detach(session: attached)
+                    continue
+                }
                 sessions[sessionId] = remote
 
             case .subscribe(let responseId, let workspaceId, let surfaceId, let lines):

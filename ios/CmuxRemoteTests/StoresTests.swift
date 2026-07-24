@@ -218,7 +218,7 @@ final class StoresTests: XCTestCase {
 
         let calls = await rpc.calls
         XCTAssertEqual(calls.map(\.method), ["surface.send_text", "surface.focus", "surface.send_key"])
-        XCTAssertEqual(surfaceStore.inputStatus, .sent("Sent ctrl+c"))
+        XCTAssertEqual(surfaceStore.inputStatus, .sent("Sent ctrl-c"))
         XCTAssertTrue(calls.contains { call in
             guard call.method == "surface.send_text",
                   case .object(let params) = call.params,
@@ -237,7 +237,7 @@ final class StoresTests: XCTestCase {
         XCTAssertTrue(calls.contains { call in
             guard call.method == "surface.send_key",
                   case .object(let params) = call.params,
-                  case .string("ctrl+c")? = params["key"]
+                  case .string("ctrl-c")? = params["key"]
             else { return false }
             return true
         })

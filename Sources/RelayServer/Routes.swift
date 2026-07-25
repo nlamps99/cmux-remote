@@ -27,16 +27,19 @@ public actor Routes {
     private let config: RelayConfig
     private let auth: AuthService
     private let allowLocalhost: Bool
+    private let pairingLimiter: PairingAttemptLimiter
 
     public init(deviceStore: DeviceStore,
                 config: RelayConfig,
                 auth: AuthService,
-                allowLocalhost: Bool = Routes.defaultAllowLocalhost())
+                allowLocalhost: Bool = Routes.defaultAllowLocalhost(),
+                pairingLimiter: PairingAttemptLimiter = PairingAttemptLimiter())
     {
         self.deviceStore = deviceStore
         self.config = config
         self.auth = auth
         self.allowLocalhost = allowLocalhost
+        self.pairingLimiter = pairingLimiter
     }
 
     /// Reads `CMUX_DEV_ALLOW_LOCALHOST=1` from the environment. When true,
@@ -66,7 +69,7 @@ public actor Routes {
             return state()
 
         case (.POST, "/v1/devices/me/register"):
-            return await registerNew(remoteAddr: remoteAddr)
+            return await registerNew(body: body, remoteAddr: remoteAddr)
 
         case (.POST, "/v1/devices/me/apns"):
             guard let did = deviceId,
@@ -133,9 +136,16 @@ public actor Routes {
 
     // MARK: - POST /v1/devices/me/register
 
-    private func registerNew(remoteAddr: String) async -> HTTPResponseLite {
+    private func registerNew(body: Data?, remoteAddr: String) async -> HTTPResponseLite {
         let peer: PeerIdentity
-        if allowLocalhost, Self.isLoopback(remoteAddr), let login = config.allowLogin.first {
+        if let request = Self.decodeLANPairing(body) {
+            switch lanPeer(for: request, remoteAddr: remoteAddr) {
+            case .peer(let identity):
+                peer = identity
+            case .rejected(let response):
+                return response
+            }
+        } else if allowLocalhost, Self.isLoopback(remoteAddr), let login = config.allowLogin.first {
             // Dev bypass — see `defaultAllowLocalhost()`. The peer identity
             // is fabricated from the first allow_login so the simulator can
             // pair without traversing tailscaled. nodeKey is a stable
@@ -186,6 +196,96 @@ public actor Routes {
 
 private func sha256Hex(_ s: String) -> String {
     SHA256.hash(data: Data(s.utf8)).map { String(format: "%02x", $0) }.joined()
+}
+
+// MARK: - LAN pairing
+
+extension Routes {
+    /// Body of a LAN pairing registration. Shaped like the broker's register
+    /// payload so the phone can reuse one request builder for both transports.
+    /// `relay_id` is absent: the direct transport addresses one Mac by host, so
+    /// there is nothing to disambiguate.
+    struct LANPairingRequest: Decodable {
+        let pairingCode: String
+        let clientId: String
+        let deviceName: String
+
+        enum CodingKeys: String, CodingKey {
+            case pairingCode = "pairing_code"
+            case clientId = "client_id"
+            case deviceName = "device_name"
+        }
+    }
+
+    /// Returns the decoded pairing request, or nil when the caller sent no body
+    /// — the Tailscale path, which stays on `tailscaled.whois`. A body that is
+    /// present but unparseable also returns nil so a malformed request falls
+    /// through to whois and is rejected there rather than silently treated as
+    /// an anonymous LAN attempt.
+    static func decodeLANPairing(_ body: Data?) -> LANPairingRequest? {
+        guard let body, !body.isEmpty,
+              let request = try? JSONDecoder().decode(LANPairingRequest.self, from: body),
+              !request.pairingCode.isEmpty,
+              !request.clientId.isEmpty,
+              !request.deviceName.isEmpty
+        else { return nil }
+        return request
+    }
+
+    /// Outcome of validating a LAN pairing attempt: either the synthesised peer
+    /// identity to register, or the response to return as-is.
+    enum LANPairingOutcome {
+        case peer(PeerIdentity)
+        case rejected(HTTPResponseLite)
+    }
+
+    /// Validates a LAN pairing attempt and synthesises the peer identity it
+    /// registers under.
+    ///
+    /// Order matters: the rate limiter is charged before the secret is compared,
+    /// so a caller cannot get unlimited guesses by racing. The caller must also
+    /// arrive from an RFC1918 address — the shared code alone is not enough,
+    /// because it would otherwise authorise anyone who could reach the port.
+    private func lanPeer(
+        for request: LANPairingRequest,
+        remoteAddr: String
+    ) -> LANPairingOutcome {
+        guard let lan = config.lan, lan.enablesPairing else {
+            return .rejected(.init(.forbidden))
+        }
+        guard PrivateAddress.isPrivateLAN(remoteAddr) else {
+            return .rejected(.init(.forbidden))
+        }
+        guard pairingLimiter.allow(key: remoteAddr) else {
+            return .rejected(.init(.tooManyRequests))
+        }
+        guard Self.secretsMatch(request.pairingCode, lan.pairingCode) else {
+            return .rejected(.init(.forbidden))
+        }
+        // `nodeKey` is what `registerNew` hashes into the device id, so keying
+        // it on the phone's stable client id makes re-pairing the same handset
+        // idempotent — matching how a tailnet peer's node key behaves.
+        return .peer(PeerIdentity(
+            loginName: "lan-pairing",
+            hostname: request.deviceName,
+            os: "ios",
+            nodeKey: "cmux-lan-pairing:\(request.clientId)"
+        ))
+    }
+
+    /// Constant-time comparison, so a wrong code cannot be recovered one byte
+    /// at a time from response timing. Length is compared first because it is
+    /// not secret in the way the contents are.
+    static func secretsMatch(_ lhs: String, _ rhs: String) -> Bool {
+        let a = Array(lhs.utf8)
+        let b = Array(rhs.utf8)
+        guard !a.isEmpty, a.count == b.count else { return false }
+        var difference: UInt8 = 0
+        for index in a.indices {
+            difference |= a[index] ^ b[index]
+        }
+        return difference == 0
+    }
 }
 
 extension Routes {

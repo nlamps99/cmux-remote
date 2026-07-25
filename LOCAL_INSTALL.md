@@ -13,6 +13,9 @@ Local compatibility changes:
 - Format uploaded-file timestamps in UTC so filenames and tests are deterministic across time zones.
 - Add an optional self-hosted VPS Broker transport so the Mac and iPhone can
   connect outbound without installing Tailscale on the phone.
+- Add opt-in LAN pairing (`lan.pairing_code`) plus an AUTO transport preference,
+  so the phone takes a one-hop LAN path on the home Wi-Fi and falls back to the
+  Broker elsewhere. LAN traffic is plain HTTP — see `broker/README.md`.
 - Scope iOS credentials to the complete server URL and relay id, and require
   HTTPS/WSS for public Broker endpoints.
 

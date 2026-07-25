@@ -46,6 +46,13 @@ struct Pair: AsyncParsableCommand {
             help: "The broker's CMUX_PAIRING_CODE. Read from stdin when omitted.")
     var pairingCode: String?
 
+    @Option(name: .customLong("lan-host"),
+            help: """
+            LAN address the phone should use on the same Wi-Fi (default: this \
+            Mac's private IPv4). Only used when relay.json has lan.pairing_code.
+            """)
+    var lanHost: String?
+
     @Flag(name: .customLong("url-only"),
           help: "Print just the cmux:// pairing URL, skipping the QR code.")
     var urlOnly = false
@@ -65,10 +72,13 @@ struct Pair: AsyncParsableCommand {
         }
 
         let code = try resolvePairingCode()
+        let lan = try resolveLAN(config: store.current)
         let payload = PairingPayload(
             serverURL: broker.url,
             relayId: broker.relayId,
-            pairingCode: code
+            pairingCode: code,
+            lanURL: lan?.url,
+            lanPairingCode: lan?.code
         )
         let urlString = try payload.urlString()
 
@@ -82,10 +92,41 @@ struct Pair: AsyncParsableCommand {
         print("  server : \(broker.url)")
         print("  relay  : \(broker.relayId)")
         print("  code   : \(Self.redact(code))")
+        if let lan {
+            print("  lan    : \(lan.url)")
+            print("  lancode: \(Self.redact(lan.code))")
+        }
         print("")
         print("  Scan from cmux Remote > Settings > Connection > Scan QR.")
         print("  Treat this code like a password: it pairs any device that reads it.")
+        if lan == nil, store.current.transport.enablesDirect {
+            print("")
+            print("  No LAN details: set lan.pairing_code in relay.json to let the")
+            print("  phone take the faster same-Wi-Fi path when it is at home.")
+        }
         print("")
+    }
+
+    /// Resolves the optional LAN half of the payload. Returns nil (rather than
+    /// throwing) whenever LAN pairing is not configured, because the broker-only
+    /// QR remains the documented happy path.
+    private func resolveLAN(config: RelayConfig) throws -> (url: String, code: String)? {
+        guard config.transport.enablesDirect,
+              let lan = config.lan,
+              lan.enablesPairing
+        else { return nil }
+        let host: String
+        if let lanHost, !lanHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            host = lanHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let detected = LANAddress.primaryIPv4() {
+            host = detected
+        } else {
+            throw ValidationError(
+                "Could not detect this Mac's LAN address. Pass --lan-host <ip> explicitly."
+            )
+        }
+        let (_, port) = parseListen(config.listen)
+        return ("http://\(host):\(port)", lan.pairingCode)
     }
 
     /// Reading from stdin keeps the secret out of the shell history and out of

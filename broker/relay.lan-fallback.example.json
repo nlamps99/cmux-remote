@@ -1,0 +1,14 @@
+{
+  "transport": "both",
+  "listen": "0.0.0.0:4399",
+  "broker": {
+    "url": "https://relay.example.com",
+    "relay_id": "home-mac",
+    "relay_token": "replace-with-the-same-value-as-CMUX_RELAY_TOKEN"
+  },
+  "lan": {
+    "pairing_code": "replace-with-openssl-rand-hex-32"
+  },
+  "default_fps": 15,
+  "idle_fps": 5
+}

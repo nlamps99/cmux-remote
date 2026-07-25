@@ -27,6 +27,33 @@ public struct RelayConfig: Codable, Equatable, Sendable {
         }
     }
 
+    /// Opt-in LAN pairing for the direct transport.
+    ///
+    /// Direct-mode registration normally proves the caller's identity through
+    /// `tailscaled.whois`, which only works for peers reaching the relay over
+    /// the tailnet. A phone on the same Wi-Fi arrives from an RFC1918 address
+    /// that tailscaled does not know, so it can never pair that way.
+    ///
+    /// Setting `pairing_code` authorises a second, narrower path: a private-LAN
+    /// caller that presents this shared secret. It is disabled whenever the
+    /// code is empty, because the LAN listener is plain HTTP — enabling it
+    /// trades wire confidentiality for latency and must be a deliberate choice.
+    public struct LAN: Codable, Equatable, Sendable {
+        public var pairingCode: String
+
+        enum CodingKeys: String, CodingKey {
+            case pairingCode = "pairing_code"
+        }
+
+        public init(pairingCode: String) {
+            self.pairingCode = pairingCode
+        }
+
+        public var enablesPairing: Bool {
+            !pairingCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
     public struct APNs: Codable, Equatable, Sendable {
         public var keyPath: String
         public var keyId: String
@@ -51,6 +78,7 @@ public struct RelayConfig: Codable, Equatable, Sendable {
     public var listen: String
     public var transport: Transport
     public var broker: Broker?
+    public var lan: LAN?
     public var allowLogin: [String]
     public var apns: APNs
     public var snippets: [Snippet]
@@ -58,15 +86,17 @@ public struct RelayConfig: Codable, Equatable, Sendable {
     public var idleFps: Int
 
     enum CodingKeys: String, CodingKey {
-        case listen, transport, broker, allowLogin = "allow_login", apns, snippets,
+        case listen, transport, broker, lan, allowLogin = "allow_login", apns, snippets,
              defaultFps = "default_fps", idleFps = "idle_fps"
     }
 
     public init(listen: String, transport: Transport = .direct, broker: Broker? = nil,
+                lan: LAN? = nil,
                 allowLogin: [String], apns: APNs,
                 snippets: [Snippet], defaultFps: Int, idleFps: Int)
     {
         self.listen = listen; self.transport = transport; self.broker = broker
+        self.lan = lan
         self.allowLogin = allowLogin; self.apns = apns
         self.snippets = snippets; self.defaultFps = defaultFps; self.idleFps = idleFps
     }
@@ -82,6 +112,7 @@ public struct RelayConfig: Codable, Equatable, Sendable {
         listen: "0.0.0.0:4399",
         transport: .direct,
         broker: nil,
+        lan: nil,
         allowLogin: [],
         apns: .init(keyPath: "", keyId: "", teamId: "", topic: "", env: "sandbox"),
         snippets: [],
@@ -98,6 +129,7 @@ public struct RelayConfig: Codable, Equatable, Sendable {
         self.listen     = try c.decodeIfPresent(String.self,    forKey: .listen)     ?? d.listen
         self.transport  = try c.decodeIfPresent(Transport.self, forKey: .transport)  ?? d.transport
         self.broker     = try c.decodeIfPresent(Broker.self,    forKey: .broker)     ?? d.broker
+        self.lan        = try c.decodeIfPresent(LAN.self,       forKey: .lan)        ?? d.lan
         self.allowLogin = try c.decodeIfPresent([String].self,  forKey: .allowLogin) ?? d.allowLogin
         self.apns       = try c.decodeIfPresent(APNs.self,      forKey: .apns)       ?? d.apns
         self.snippets   = try c.decodeIfPresent([Snippet].self, forKey: .snippets)   ?? d.snippets

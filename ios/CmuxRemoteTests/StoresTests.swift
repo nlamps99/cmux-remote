@@ -4,6 +4,102 @@ import SharedKit
 
 @MainActor
 final class StoresTests: XCTestCase {
+    /// cmux scopes `workspace.list` to one window. A second open window used to
+    /// be invisible on iOS because the app never passed `window_id`.
+    private func multiWindowStub() -> StubRPCDispatch {
+        StubRPCDispatch(
+            windows: [
+                ("win-a-uuid", "window:1", false),
+                ("win-b-uuid", "window:2", true),
+            ],
+            workspacesByWindow: [
+                "win-a-uuid": [("wa1", "Alpha"), ("wa2", "Beta")],
+                "win-b-uuid": [("wb1", "Gamma")],
+            ]
+        )
+    }
+
+    func testRefreshLoadsWindowsAndDefaultsToTheKeyWindow() async {
+        let store = WorkspaceStore(rpc: multiWindowStub())
+
+        await store.refresh()
+
+        XCTAssertEqual(store.windows.map(\.ref), ["window:1", "window:2"])
+        XCTAssertEqual(store.selectedWindowId, "win-b-uuid")
+        XCTAssertEqual(store.selectedWindow?.ref, "window:2")
+        XCTAssertEqual(store.workspaces.map(\.name), ["Gamma"])
+    }
+
+    func testWorkspaceListIsScopedToTheSelectedWindow() async {
+        let rpc = multiWindowStub()
+        let store = WorkspaceStore(rpc: rpc)
+        await store.refresh()
+
+        await store.selectWindow(id: "win-a-uuid")
+
+        XCTAssertEqual(store.workspaces.map(\.name), ["Alpha", "Beta"])
+        XCTAssertEqual(store.selectedId, "wa1")
+        let scoped = await rpc.calls.filter { $0.method == "workspace.list" }
+        guard case .object(let params) = scoped.last?.params,
+              case .string(let windowId)? = params["window_id"]
+        else { return XCTFail("workspace.list must carry window_id") }
+        XCTAssertEqual(windowId, "win-a-uuid")
+    }
+
+    func testWindowCountsComeFromWindowList() async {
+        let store = WorkspaceStore(rpc: multiWindowStub())
+        await store.refresh()
+        XCTAssertEqual(store.windows.map(\.workspaceCount), [2, 1])
+        XCTAssertEqual(store.windows.map(\.isKey), [false, true])
+    }
+
+    /// Older cmux builds have no `window.list`. The app must keep listing the
+    /// key window's workspaces with no `window_id` rather than showing nothing.
+    func testMissingWindowListFallsBackToUnscopedWorkspaceList() async {
+        let rpc = StubRPCDispatch()
+        let store = WorkspaceStore(rpc: rpc)
+
+        await store.refresh()
+
+        XCTAssertTrue(store.windows.isEmpty)
+        XCTAssertNil(store.selectedWindowId)
+        XCTAssertEqual(store.workspaces.map(\.name), ["Demo"])
+        XCTAssertEqual(store.connection, .connected)
+        let listCalls = await rpc.calls.filter { $0.method == "workspace.list" }
+        guard case .object(let params) = listCalls.first?.params else {
+            return XCTFail("expected object params")
+        }
+        XCTAssertNil(params["window_id"])
+    }
+
+    func testCreateWorkspaceTargetsTheSelectedWindow() async throws {
+        let rpc = multiWindowStub()
+        let store = WorkspaceStore(rpc: rpc)
+        await store.refresh()
+        await store.selectWindow(id: "win-a-uuid")
+
+        try await store.create(name: "New One")
+
+        let creates = await rpc.calls.filter { $0.method == "workspace.create" }
+        guard case .object(let params) = creates.first?.params,
+              case .string(let windowId)? = params["window_id"]
+        else { return XCTFail("workspace.create must carry window_id") }
+        XCTAssertEqual(windowId, "win-a-uuid")
+    }
+
+    func testSwitchingWindowClearsStaleWorkspaceSelection() async {
+        let store = WorkspaceStore(rpc: multiWindowStub())
+        await store.refresh()
+        XCTAssertEqual(store.selectedId, "wb1")
+
+        await store.selectWindow(id: "win-a-uuid")
+
+        // Workspace ids belong to their owning window, so a stale id must not
+        // survive the switch.
+        XCTAssertNotEqual(store.selectedId, "wb1")
+        XCTAssertEqual(store.selectedId, "wa1")
+    }
+
     func testWorkspaceRefreshLoadsSurfaces() async {
         let rpc = StubRPCDispatch()
         let store = WorkspaceStore(rpc: rpc)
@@ -298,7 +394,7 @@ final class StoresTests: XCTestCase {
 
         let calls = await rpc.calls
         XCTAssertEqual(calls.map(\.method), ["surface.send_text", "surface.focus", "surface.send_key"])
-        XCTAssertEqual(surfaceStore.inputStatus, .sent("Sent ctrl+c"))
+        XCTAssertEqual(surfaceStore.inputStatus, .sent("Sent ctrl-c"))
         XCTAssertTrue(calls.contains { call in
             guard call.method == "surface.send_text",
                   case .object(let params) = call.params,

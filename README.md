@@ -138,6 +138,10 @@ cmux 소스 코드는 이 저장소에 포함되지 않습니다. 문서화된 J
 ### 작업공간 / surface
 
 - 작업공간 / 터미널 surface 목록
+- **여러 cmux 윈도우 지원** — cmux의 `workspace.list`는 키 윈도우 하나만
+  돌려주므로, 두 번째 윈도우의 작업공간은 예전에는 앱에서 아예 보이지
+  않았습니다. `window.list`로 윈도우를 열거하고 `window_id`로 범위를
+  지정합니다. 윈도우가 둘 이상일 때만 목록 위에 스위처가 나타납니다.
 - 워크스페이스 생성 시 입력한 제목을 cmux `workspace.create`의 `title`로 반영
 - 워크스페이스 이름 변경 (`workspace.rename`) / 닫기 (`workspace.close`)
 - 칩바에서 surface 생성 / 닫기 (확정 다이얼로그 포함)
@@ -311,15 +315,52 @@ relay가 태그 노드로 도는 경우에만 아래 **설정**의 `allow_login`
 디바이스별 토큰이 발급되며
 `~/.cmuxremote/bin/cmux-relay devices revoke <id>`로 언제든 해지할 수 있습니다.
 
+#### QR 페어링 (Server 모드)
+
+Server 모드는 서버 URL, relay id, 그리고 `openssl rand -hex 32`로 만들어진
+64자 페어링 코드를 입력해야 합니다. 한 글자만 틀려도 `pairing_rejected`가
+나고, Broker는 페어링 요직을 소스 IP버 분당 5회로 제한하기 때뫬에 오학를
+몇 번 하면 1분간 마혀버립니다. 토이핬 대신 QR로 넘길 수 있습니다:
+
+```bash
+# 페어링 코드는 직접 입력합니다 (프롬프트가 나타납니다)
+~/.cmuxremote/bin/cmux-relay pair
+
+# 또는 VPS에서 바로 파이프로 받기 (쉘 히스토리에 남지 않음)
+ssh <vps> "docker exec cmux-remote-broker-broker-1 printenv CMUX_PAIRING_CODE" \
+  | ~/.cmuxremote/bin/cmux-relay pair
+
+# QR 없이 URL만
+cmux-relay pair --url-only
+```
+
+서버 URL과 relay id는 `relay.json`에서 자동으로 읽습니다. 페어링 코드만
+인자 또는 stdin으로 넘기는데, 이는 의도적입니다 — `relay.json`은 relay 자기
+`relay_token`만 가지며, Mac이 폰 페어링 비밀까지 보관할 이유는 없습니다.
+stdin으로 읽으면 쉘 히스토리와 `ps` 에도 남지 않습니다. 터미널에는 마스킹된
+형태만 출력됩니다.
+
+iPhone에서 **Settings → Connection**, 모드를 `SERVER`로 바꾸면
+**[ SCAN QR FROM MAC ]** 버튼이 나타납니다. 스캔하면 세 필드가 채워지지만
+자동으로 재연결하지는 않습니다 — 잘못 스캔한 것이 동작하는 설정을 조용히 덮어쓰는 상황을
+피하기 위해 **[ SAVE & RECONNECT ]** 를 사용자가 누릅니다. 페이로드는
+`cmux://pair` URL이므로 iOS 기본 카메라로 스캔해도 앱으로 돌아옵니다.
+
+> **QR 코드 자신이 보안 자산입니다.** 페어링 코드가 평문으로 들어있으며,
+> Broker의 `register`는 코드를 소모하지 않으므로 재사용 가능합니다. 스크린샷 /
+> 화면 공유 / 녹화로 유출되지 않도록 사용 후 `clear` 하세요.
+
 ### 4. 사용
 
 - **Workspaces** — 작업공간 목록. 탭하면 surface 칩바가 펼쳐짐. 여기서 작업공간 생성, 이름 변경, 닫기도 처리.
+  cmux 윈도우가 둘 이상이면 목록 위에 윈도우 스위처가 나타나며, 각 칩은
+  `window:N` 과 작업공간 개수를 보여줍니다 (● 표식은 cmux의 키 윈도우).
 - **Terminal** — 탭한 surface가 미러링. 하단 액세서리 바로 키 입력.
   키보드 줄, esc / 화살표 / tab / 마우스 모드 / pane 토글 다 거기.
 - **Notifications** — cmux 알림 Inbox. 앱이 살아있을 때 도착한
   알림이 시간순으로 쌓입니다. iOS 배너도 같이 떠요 (포그라운드/짧은
   백그라운드).
-- **Settings** — 호스트/포트, 재연결, 테스트 알림 발사.
+- **Settings** — 호스트/포트, QR 스캔 페어링, 재연결, 테스트 알림 발사.
 
 ---
 

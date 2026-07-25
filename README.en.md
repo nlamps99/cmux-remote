@@ -145,6 +145,10 @@ client that talks to cmux over a documented JSON-RPC schema.
 ### Workspaces / surfaces
 
 - Workspace and terminal-surface listing
+- **Multiple cmux windows** — cmux scopes `workspace.list` to its key
+  window, so a second open window used to be entirely invisible in the
+  app. Windows are enumerated with `window.list` and the list is scoped
+  by `window_id`. A switcher appears only when more than one exists.
 - Workspace creation with the requested title sent to cmux as `workspace.create.title`
 - Workspace rename (`workspace.rename`) and close (`workspace.close`) from the workspace list
 - In-app surface create / close from the chip bar (with confirmation
@@ -342,16 +346,57 @@ to `allow_login` under **Configuration** below (any other login gets
 `403 Forbidden`). Pairing exchanges a per-device token; revoke any device
 anytime with `~/.cmuxremote/bin/cmux-relay devices revoke <id>`.
 
+#### QR pairing (Server mode)
+
+Server mode otherwise means typing a server URL, a relay id, and a 64-char
+`openssl rand -hex 32` pairing code into the phone. One wrong character
+yields `pairing_rejected`, and the broker rate-limits pairing by source IP
+to 5/minute, so a couple of typos lock you out for a minute. Scan instead:
+
+```bash
+# prompts for the pairing code on stdin
+~/.cmuxremote/bin/cmux-relay pair
+
+# or pipe it straight from the VPS (stays out of shell history)
+ssh <vps> "docker exec cmux-remote-broker-broker-1 printenv CMUX_PAIRING_CODE" \
+  | ~/.cmuxremote/bin/cmux-relay pair
+
+# URL only, no QR code
+cmux-relay pair --url-only
+```
+
+The server URL and relay id are read from `relay.json`. Only the pairing
+code is passed as an argument or on stdin, and that is deliberate:
+`relay.json` holds the relay's own `relay_token`, not the phone pairing
+secret, and the Mac has no reason to store the latter. Reading it from
+stdin also keeps it out of shell history and out of `ps`. The terminal only
+ever prints a redacted form.
+
+On the phone, open **Settings → Connection**, switch the mode to `SERVER`,
+and a **[ SCAN QR FROM MAC ]** button appears. Scanning fills the three
+fields but deliberately does not reconnect — you still confirm with
+**[ SAVE & RECONNECT ]**, so a mis-scan cannot silently replace a working
+configuration. The payload is a `cmux://pair` URL, so the system Camera app
+routes back into the app just as the in-app scanner does.
+
+> **The QR code is itself a secret.** It carries the pairing code in the
+> clear, and the broker's `register` does not consume it, so the image stays
+> reusable. Run `clear` afterwards and keep it out of screenshots, screen
+> shares, and recordings.
+
 ### 4. Use it
 
 - **Workspaces** — the workspace list. Tap one to expand its surface
   chip bar, or create, rename, and close workspaces in place.
+  With more than one cmux window open, a switcher sits above the list;
+  each chip shows `window:N` and its workspace count (● marks the key
+  window).
 - **Terminal** — the tapped surface mirrors here. The bottom accessory
   bar carries esc / arrows / tab / mouse mode / pane toggle.
 - **Notifications** — Inbox for cmux notifications. Anything delivered
   while the app is alive shows up newest-first, plus an iOS banner
   (foreground or short background only).
-- **Settings** — host/port, reconnect, send test notification.
+- **Settings** — host/port, QR scan pairing, reconnect, send test notification.
 
 ---
 

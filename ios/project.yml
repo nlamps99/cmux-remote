@@ -61,6 +61,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSLocalNetworkUsageDescription: "Mac에서 실행 중인 cmux relay에 연결해 작업공간과 터미널을 원격으로 제어하기 위해 로컬 네트워크 접근이 필요합니다."
+        NSCameraUsageDescription: "扫描 Mac 上 cmux-relay 生成的二维码来完成配对，无需手动输入服务器地址和配对码。"
         ITSAppUsesNonExemptEncryption: false
         UIAppFonts:
           - "DepartureMono-Regular.otf"

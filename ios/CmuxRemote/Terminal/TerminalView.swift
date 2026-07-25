@@ -13,6 +13,9 @@ struct TerminalView: View {
     @AppStorage("cmux.terminalLineSpacing") private var preferredLineSpacing: Double = 2
     @AppStorage("cmux.terminalScanlines") private var scanlinesEnabled: Bool = true
     @AppStorage("cmux.terminalScanlineIntensity") private var scanlineIntensity: Double = 0.18
+    // Read here purely so a theme switch invalidates this view and reaches
+    // `TerminalHistoryCollectionView`, whose cells cache colors per palette.
+    @AppStorage("cmux.theme") private var themeRaw: String = CmuxColorTheme.storm.rawValue
     @State private var pinchAnchorFontSize: CGFloat?
 
     private static let fontSizeRange: ClosedRange<CGFloat> = 8...32
@@ -43,9 +46,18 @@ struct TerminalView: View {
                         bottomPadding: bottomScrollPadding,
                         scrollToBottomRequest: scrollToBottomRequest,
                         isLoading: store.isLoadingOlderHistory,
-                        onLoadOlder: { Task { await store.loadOlderHistory() } }
+                        onLoadOlder: { Task { await store.loadOlderHistory() } },
+                        theme: themeRaw
                     )
                     .frame(width: contentWidth, height: viewportHeight)
+                    .overlay {
+                        if scanlinesEnabled {
+                            TerminalScanlineOverlay(
+                                lineHeight: lineHeight,
+                                intensity: scanlineIntensity
+                            )
+                        }
+                    }
                     .accessibilityIdentifier("TerminalViewport")
                     .accessibilityLabel(L10n.string("Terminal output"))
                     .accessibilityValue(accessibilitySnapshot)
@@ -83,90 +95,6 @@ struct TerminalView: View {
     }
 }
 
-/// Legacy Canvas renderer retained for terminal-cell visual tests and future
-/// shader work. The active terminal viewport now uses the single UIKit
-/// collection below so live output and history share one scroll position.
-private struct TerminalPageCanvas: View {
-    let cells: [[ANSICell]]
-    let cursor: CursorPos?
-    let width: CGFloat
-    let lineHeight: CGFloat
-    let fontSize: CGFloat
-    let advance: CGFloat
-    let leftInset: CGFloat
-    let viewportColumns: Int
-    let scanlinesEnabled: Bool
-    let scanlineIntensity: Double
-
-    var body: some View {
-        let layout = TerminalVisualLayout.make(
-            rows: cells,
-            cursor: cursor ?? CursorPos(x: -1, y: -1),
-            wrappingAt: viewportColumns
-        )
-
-        Canvas { context, _ in
-            for (y, row) in layout.rows.enumerated() {
-                let rowY = 8 + CGFloat(y) * lineHeight
-                for run in row.runs where run.startColumn < viewportColumns {
-                    guard run.attr.bg != .default, run.columns > 0 else { continue }
-                    let x = leftInset + CGFloat(run.startColumn) * advance
-                    let runWidth = CGFloat(run.columns) * advance
-                    context.fill(
-                        Path(CGRect(x: x, y: rowY, width: runWidth, height: lineHeight)),
-                        with: .color(run.attr.bg.swiftUI)
-                    )
-                }
-                for run in row.runs where run.startColumn < viewportColumns {
-                    let point = CGPoint(
-                        x: leftInset + CGFloat(run.startColumn) * advance,
-                        y: rowY
-                    )
-                    context.draw(
-                        Text(run.text)
-                            .font(CmuxFont.body(fontSize, weight: run.attr.bold ? .bold : .regular))
-                            .foregroundStyle(run.attr.fg.swiftUI),
-                        at: point,
-                        anchor: .topLeading
-                    )
-                    if run.attr.underline, run.columns > 0 {
-                        let underlineY = rowY + lineHeight - 2
-                        let runWidth = CGFloat(run.columns) * advance
-                        context.fill(
-                            Path(CGRect(
-                                x: point.x,
-                                y: underlineY,
-                                width: runWidth,
-                                height: max(1, fontSize / 12)
-                            )),
-                            with: .color(run.attr.fg.swiftUI)
-                        )
-                    }
-                }
-            }
-
-            if let cursor = layout.cursor,
-               cursor.y >= 0,
-               cursor.y < layout.rows.count,
-               cursor.x < viewportColumns
-            {
-                let cursorX = leftInset + CGFloat(cursor.x) * advance
-                let cursorY = 8 + CGFloat(cursor.y) * lineHeight
-                context.fill(
-                    Path(CGRect(x: cursorX, y: cursorY, width: advance, height: lineHeight)),
-                    with: .color(CmuxTheme.accentGreen.opacity(0.85))
-                )
-            }
-        }
-        .frame(width: width, height: max(1, CGFloat(layout.rows.count) * lineHeight + 16))
-        .cmuxScanlines(
-            enabled: scanlinesEnabled,
-            lineHeight: Float(lineHeight),
-            intensity: Float(scanlineIntensity)
-        )
-    }
-}
-
 /// One virtual terminal viewport for both current output and scrollback.
 /// History pages are inserted at index zero; the live terminal remains the
 /// final item for the entire lifetime of this collection view. There is never
@@ -182,6 +110,7 @@ private struct TerminalHistoryCollectionView: UIViewRepresentable {
     let scrollToBottomRequest: Int
     let isLoading: Bool
     let onLoadOlder: () -> Void
+    let theme: String
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -214,10 +143,13 @@ private struct TerminalHistoryCollectionView: UIViewRepresentable {
         let previousItems = coordinator.items
         let previousIDs = previousItems.map(\.id)
         let itemIDs = items.map(\.id)
-        let widthChanged = coordinator.updateConfiguration(
-            width: width,
-            fontSize: fontSize,
-            lineHeight: lineHeight
+        let renderConfigChanged = coordinator.updateConfiguration(
+            TerminalRenderConfiguration(
+                width: width,
+                fontSize: fontSize,
+                lineHeight: lineHeight,
+                theme: theme
+            )
         )
         let itemsChanged = previousIDs != itemIDs
         let changedExistingIDs: Set<String> = Set(items.compactMap { item -> String? in
@@ -235,7 +167,7 @@ private struct TerminalHistoryCollectionView: UIViewRepresentable {
         collection.contentInset.bottom = bottomPadding
         collection.verticalScrollIndicatorInsets.bottom = bottomPadding
 
-        guard itemsChanged || widthChanged || !changedExistingIDs.isEmpty || shouldPinToBottom else { return }
+        guard itemsChanged || renderConfigChanged || !changedExistingIDs.isEmpty || shouldPinToBottom else { return }
         let prependedItems = !previousIDs.isEmpty
             && itemIDs.count > previousIDs.count
             && Array(itemIDs.suffix(previousIDs.count)) == previousIDs
@@ -243,7 +175,7 @@ private struct TerminalHistoryCollectionView: UIViewRepresentable {
         if previousIDs.isEmpty {
             coordinator.suppressTopRequestUntilInitialAnchor()
         }
-        if prependedItems && !widthChanged {
+        if prependedItems && !renderConfigChanged {
             let anchor = coordinator.captureViewportAnchor(in: collection)
             coordinator.items = items
             let inserted = (0..<(itemIDs.count - previousIDs.count)).map { IndexPath(item: $0, section: 0) }
@@ -265,7 +197,7 @@ private struct TerminalHistoryCollectionView: UIViewRepresentable {
         coordinator.items = items
         let onlyLiveTailChanged = changedExistingIDs == Set([SurfaceStore.liveHistoryAnchorID])
         let liveTailKeptSameRowCount = previousItems.last?.rows.count == liveRows.count
-        if !itemsChanged, !widthChanged, onlyLiveTailChanged, liveTailKeptSameRowCount {
+        if !itemsChanged, !renderConfigChanged, onlyLiveTailChanged, liveTailKeptSameRowCount {
             // screen.diff changes only the current terminal grid. Reloading a
             // UICollectionView cell for every frame makes UIKit recycle and
             // fade the cell, which reads as a full-screen flash at the bottom
@@ -278,7 +210,7 @@ private struct TerminalHistoryCollectionView: UIViewRepresentable {
             }
             return
         }
-        if !itemsChanged, !widthChanged, !changedExistingIDs.isEmpty {
+        if !itemsChanged, !renderConfigChanged, !changedExistingIDs.isEmpty {
             let visibleIDs = Set(collection.indexPathsForVisibleItems.compactMap { indexPath in
                 indexPath.item < previousItems.count ? previousItems[indexPath.item].id : nil
             })
@@ -318,9 +250,7 @@ private struct TerminalHistoryCollectionView: UIViewRepresentable {
         var onLoadOlder: (() -> Void)?
         var lastBottomRequest = Int.min
 
-        private var configuredWidth: CGFloat = 0
-        private var configuredFontSize: CGFloat = 0
-        private var configuredLineHeight: CGFloat = 0
+        private var configuration: TerminalRenderConfiguration?
         private var heightCache: [String: CGFloat] = [:]
         private let attributedCache: NSCache<NSString, NSAttributedString> = {
             let cache = NSCache<NSString, NSAttributedString>()
@@ -338,14 +268,9 @@ private struct TerminalHistoryCollectionView: UIViewRepresentable {
             let offsetFromViewportTop: CGFloat
         }
 
-        func updateConfiguration(width: CGFloat, fontSize: CGFloat, lineHeight: CGFloat) -> Bool {
-            let changed = abs(configuredWidth - width) > 0.5
-                || abs(configuredFontSize - fontSize) > 0.01
-                || abs(configuredLineHeight - lineHeight) > 0.01
-            guard changed else { return false }
-            configuredWidth = width
-            configuredFontSize = fontSize
-            configuredLineHeight = lineHeight
+        func updateConfiguration(_ next: TerminalRenderConfiguration) -> Bool {
+            guard next.invalidatesCache(comparedTo: configuration) else { return false }
+            configuration = next
             heightCache.removeAll(keepingCapacity: true)
             attributedCache.removeAllObjects()
             return true
@@ -506,7 +431,7 @@ private struct TerminalHistoryCollectionView: UIViewRepresentable {
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
                 context: nil
             ).height
-            let height = max(configuredLineHeight, ceil(measured)) + TerminalHistoryTextCell.verticalInsets
+            let height = max(configuration?.lineHeight ?? 0, ceil(measured)) + TerminalHistoryTextCell.verticalInsets
             heightCache[key] = height
             return height
         }
@@ -516,12 +441,61 @@ private struct TerminalHistoryCollectionView: UIViewRepresentable {
             if let cached = attributedCache.object(forKey: key) { return cached }
             let result = TerminalHistoryTextRenderer.make(
                 rows: item.rows,
-                fontSize: configuredFontSize,
-                lineHeight: configuredLineHeight
+                fontSize: configuration?.fontSize ?? CmuxFont.Role.headline.size,
+                lineHeight: configuration?.lineHeight ?? 0
             )
             attributedCache.setObject(result, forKey: key)
             return result
         }
+    }
+}
+
+/// Everything the UIKit terminal caches derived data against. `theme` matters
+/// because `TerminalHistoryTextRenderer` bakes palette colors into the cached
+/// `NSAttributedString`s, so a theme switch has to drop those caches or the
+/// terminal keeps rendering the previous palette.
+struct TerminalRenderConfiguration: Equatable {
+    let width: CGFloat
+    let fontSize: CGFloat
+    let lineHeight: CGFloat
+    let theme: String
+
+    func invalidatesCache(comparedTo other: TerminalRenderConfiguration?) -> Bool {
+        guard let other else { return true }
+        return abs(width - other.width) > 0.5
+            || abs(fontSize - other.fontSize) > 0.01
+            || abs(lineHeight - other.lineHeight) > 0.01
+            || theme != other.theme
+    }
+}
+
+/// CRT scanlines drawn over the terminal viewport.
+///
+/// The shader-based `cmuxScanlines` layer effect cannot be used here: the
+/// viewport is a `UIViewRepresentable` wrapping a `UICollectionView`, and
+/// `layerEffect` on a live UIKit scroll view rasterises it every frame. This
+/// overlay stays purely additive so scrolling keeps the UIKit fast path.
+private struct TerminalScanlineOverlay: View {
+    let lineHeight: CGFloat
+    let intensity: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            let band = max(2, lineHeight / 2)
+            Canvas { context, size in
+                var y: CGFloat = 0
+                while y < size.height {
+                    context.fill(
+                        Path(CGRect(x: 0, y: y, width: size.width, height: band / 2)),
+                        with: .color(.black.opacity(intensity))
+                    )
+                    y += band
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

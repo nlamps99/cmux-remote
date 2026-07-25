@@ -1,5 +1,27 @@
 import Foundation
 
+/// A cmux app window.
+///
+/// cmux scopes `workspace.list` to a single window: called without params it
+/// returns only the current key window's workspaces, so a second open window is
+/// invisible to the app unless it passes `window_id` explicitly. `window.list`
+/// enumerates the windows to pick from.
+public struct CmuxWindow: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    /// cmux's stable `window:N` reference, shown to disambiguate windows that
+    /// have no user-facing name of their own.
+    public var ref: String
+    public var index: Int
+    public var workspaceCount: Int
+    /// True for the window cmux currently treats as key (frontmost).
+    public var isKey: Bool
+
+    public init(id: String, ref: String, index: Int, workspaceCount: Int, isKey: Bool) {
+        self.id = id; self.ref = ref; self.index = index
+        self.workspaceCount = workspaceCount; self.isKey = isKey
+    }
+}
+
 /// Workspace as it crosses the relay → iOS boundary.
 ///
 /// Slimmed v2 (2026-05-10): cmux's `workspace.list` does not expose `lastActivity`

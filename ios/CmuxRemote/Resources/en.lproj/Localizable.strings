@@ -6,6 +6,9 @@
 "%lld unread inbox notifications" = "%lld unread inbox notifications";
 "%lld unread notifications" = "%lld unread notifications";
 "workspaces" = "WORKSPACES";
+"windows" = "WINDOWS";
+"win %@" = "win %@";
+"%@, %lld workspaces" = "%1$@, %2$lld workspaces";
 "events" = "EVENTS";
 "surfaces" = "SURFACES";
 "filter…" = "filter…";
@@ -112,6 +115,15 @@
 "server url" = "SERVER URL";
 "relay id" = "RELAY ID";
 "pairing code" = "PAIRING CODE";
+"[ SCAN QR FROM MAC ]" = "[ SCAN QR FROM MAC ]";
+"Scan QR" = "Scan QR";
+"scanned %@ — tap save & reconnect" = "scanned %@ — tap save & reconnect";
+"That QR code is not a cmux pairing code." = "That QR code is not a cmux pairing code.";
+"On your Mac run:" = "On your Mac run:";
+"Camera viewfinder for pairing QR code" = "Camera viewfinder for pairing QR code";
+"Camera access is off" = "Camera access is off";
+"Enable the camera in iOS Settings to scan a pairing code, or enter the details by hand." = "Enable the camera in iOS Settings to scan a pairing code, or enter the details by hand.";
+"Open iOS settings" = "Open iOS settings";
 "tutorial" = "SETUP GUIDE";
 "Mac이나 Tailscale 없이 앱을 둘러볼 수 있어요. 가짜 워크스페이스 / 터미널 / 알림이 채워집니다. App Review 평가 경로이기도 합니다." = "Explore the app without a Mac or Tailscale. It fills the app with demo workspaces, terminals, and notifications.";
 "[ EXIT DEMO MODE ]" = "[ EXIT DEMO MODE ]";

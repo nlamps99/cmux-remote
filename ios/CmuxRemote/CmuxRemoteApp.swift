@@ -138,10 +138,7 @@ struct CmuxRemoteApp: App {
         }
 
         let keychain = Keychain(service: "com.genie.cmuxremote")
-        if !Self.shouldSkipHardeningForDevelopment(
-            environment: processInfo.environment,
-            arguments: processInfo.arguments
-        ) {
+        if !Self.shouldSkipHardeningForDevelopment() {
             let result = HardeningCheck(keychain: keychain).runAtLaunch()
             guard result == .ok else { return }
         }
@@ -336,6 +333,17 @@ struct CmuxRemoteApp: App {
     }
 
     private func handleDeepLink(_ url: URL) {
+        // A `cmux://pair?...` code scanned with the system Camera app lands here
+        // rather than in the in-app scanner. Store the connection details and let
+        // the user confirm in Settings; pairing is not started automatically.
+        if let payload = try? PairingPayload(url: url) {
+            let defaults = UserDefaults.standard
+            defaults.set(ConnectionMode.broker.rawValue, forKey: "cmux.connectionMode")
+            defaults.set(payload.serverURL, forKey: "cmux.brokerURL")
+            defaults.set(payload.relayId, forKey: "cmux.relayId")
+            defaults.set(payload.pairingCode, forKey: "cmux.pairingCode")
+            return
+        }
         // cmux://surface/<id> will land with APNs/deep-link handling in M6.
     }
 
@@ -373,10 +381,12 @@ struct CmuxRemoteApp: App {
         return TestNotificationResult(localInjected: true, roundTrip: roundTrip)
     }
 
-    static func shouldSkipHardeningForDevelopment(
-        environment: [String: String],
-        arguments: [String] = []
-    ) -> Bool {
+    /// Jailbreak/debugger checks are skipped in DEBUG builds so simulator and
+    /// device development does not trip them. There is deliberately no
+    /// environment or argument escape hatch: that would ship a bypass path for
+    /// the hardening check inside Release builds. Gating on the build
+    /// configuration keeps the bypass impossible to reach in production.
+    static func shouldSkipHardeningForDevelopment() -> Bool {
         #if DEBUG
         return true
         #else

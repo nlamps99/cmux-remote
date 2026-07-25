@@ -6,6 +6,9 @@
 "%lld unread inbox notifications" = "%lld 条未读收件箱通知";
 "%lld unread notifications" = "%lld 条未读通知";
 "workspaces" = "工作区";
+"windows" = "窗口";
+"win %@" = "窗口 %@";
+"%@, %lld workspaces" = "%1$@，%2$lld 个工作区";
 "events" = "事件";
 "surfaces" = "终端";
 "filter…" = "筛选…";
@@ -112,6 +115,15 @@
 "server url" = "服务器地址";
 "relay id" = "Relay ID";
 "pairing code" = "配对码";
+"[ SCAN QR FROM MAC ]" = "[ 扫描 MAC 二维码 ]";
+"Scan QR" = "扫码配对";
+"scanned %@ — tap save & reconnect" = "已读取 %@ — 请点保存并重新连接";
+"That QR code is not a cmux pairing code." = "这不是 cmux 配对二维码。";
+"On your Mac run:" = "在 Mac 上执行：";
+"Camera viewfinder for pairing QR code" = "配对二维码取景框";
+"Camera access is off" = "相机权限未开启";
+"Enable the camera in iOS Settings to scan a pairing code, or enter the details by hand." = "在 iOS 设置里开启相机权限即可扫码配对，或者手动输入连接信息。";
+"Open iOS settings" = "打开 iOS 设置";
 "tutorial" = "连接指南";
 "Mac이나 Tailscale 없이 앱을 둘러볼 수 있어요. 가짜 워크스페이스 / 터미널 / 알림이 채워집니다. App Review 평가 경로이기도 합니다." = "无需 Mac 或 Tailscale 也能体验 App。它会填充演示工作区、终端和通知。";
 "[ EXIT DEMO MODE ]" = "[ 退出演示模式 ]";

@@ -20,9 +20,93 @@ import Logging
 struct CmuxRelay: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "cmux-relay",
-        subcommands: [Serve.self, Devices.self],
+        subcommands: [Serve.self, Devices.self, Pair.self],
         defaultSubcommand: Serve.self
     )
+}
+
+/// Prints a scannable pairing code so the phone does not have to have a broker
+/// URL, relay id, and 64-character pairing code typed into it by hand.
+///
+/// The pairing code is passed in rather than read from `relay.json` on purpose:
+/// `relay.json` holds the relay's own `relay_token`, not the phone pairing
+/// secret, and the Mac has no need to store the latter. Keeping it an argument
+/// avoids widening where that secret lives.
+struct Pair: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "pair",
+        abstract: "Print pairing details for a phone, optionally as a QR code."
+    )
+
+    @Option(name: .customLong("config"),
+            help: "Path to relay.json (default: ~/.cmuxremote/relay.json).")
+    var config: String = defaultConfigPath()
+
+    @Option(name: .customLong("pairing-code"),
+            help: "The broker's CMUX_PAIRING_CODE. Read from stdin when omitted.")
+    var pairingCode: String?
+
+    @Flag(name: .customLong("url-only"),
+          help: "Print just the cmux:// pairing URL, skipping the QR code.")
+    var urlOnly = false
+
+    func run() async throws {
+        let store = ConfigStore(url: URL(fileURLWithPath: config))
+        try store.reload()
+        guard let broker = store.current.broker else {
+            throw ValidationError(
+                "relay.json has no `broker` block. QR pairing applies to broker transport only."
+            )
+        }
+        guard store.current.transport.enablesBroker else {
+            throw ValidationError(
+                "relay.json transport is `\(store.current.transport.rawValue)`; expected `broker` or `both`."
+            )
+        }
+
+        let code = try resolvePairingCode()
+        let payload = PairingPayload(
+            serverURL: broker.url,
+            relayId: broker.relayId,
+            pairingCode: code
+        )
+        let urlString = try payload.urlString()
+
+        if urlOnly {
+            print(urlString)
+            return
+        }
+
+        print("")
+        print(try QRCodeRenderer.asciiQR(for: urlString))
+        print("  server : \(broker.url)")
+        print("  relay  : \(broker.relayId)")
+        print("  code   : \(Self.redact(code))")
+        print("")
+        print("  Scan from cmux Remote > Settings > Connection > Scan QR.")
+        print("  Treat this code like a password: it pairs any device that reads it.")
+        print("")
+    }
+
+    /// Reading from stdin keeps the secret out of the shell history and out of
+    /// the process list that any local user can inspect via `ps`.
+    private func resolvePairingCode() throws -> String {
+        if let pairingCode, !pairingCode.isEmpty {
+            return pairingCode
+        }
+        FileHandle.standardError.write(Data("Pairing code: ".utf8))
+        guard let line = readLine(strippingNewline: true),
+              !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            throw ValidationError("A pairing code is required.")
+        }
+        return line.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func redact(_ secret: String) -> String {
+        guard secret.count > 8 else { return String(repeating: "*", count: secret.count) }
+        return "\(secret.prefix(4))\u{2026}\(secret.suffix(4)) (\(secret.count) chars)"
+    }
 }
 
 struct Serve: AsyncParsableCommand {

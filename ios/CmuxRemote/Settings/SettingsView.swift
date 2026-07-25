@@ -1,3 +1,4 @@
+import SharedKit
 import SwiftUI
 import UIKit
 
@@ -27,13 +28,15 @@ struct SettingsView: View {
     @AppStorage("cmux.terminalHaptics") private var terminalHaptics: Bool = false
     @State private var localStatus: TestNotificationStatus = .idle
     @State private var roundTripStatus: TestNotificationStatus = .idle
+    @State private var showPairingScanner = false
+    @State private var pairingScanConfirmation: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: CmuxSpacing.xl) {
                     Text(L10n.string("settings"))
-                        .cmuxDisplay(28)
+                        .cmuxLargeTitle()
                         .foregroundStyle(CmuxTheme.ink)
 
                     settingsMenuGroup(title: "settings connection") {
@@ -54,9 +57,9 @@ struct SettingsView: View {
                 }
                 .frame(maxWidth: 920, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.horizontal, 18)
-                .padding(.top, 16)
-                .padding(.bottom, 40)
+                .padding(.horizontal, CmuxSpacing.screen)
+                .padding(.top, CmuxSpacing.lg)
+                .padding(.bottom, CmuxSpacing.xxl + CmuxSpacing.sm)
             }
             .scrollContentBackground(.hidden)
             .background(CmuxTheme.canvas)
@@ -70,33 +73,27 @@ struct SettingsView: View {
 
     private func settingsMenuItem(_ section: SettingsSection) -> some View {
         NavigationLink(value: section) {
-            HStack(spacing: 12) {
+            HStack(spacing: CmuxSpacing.md) {
                 Image(systemName: section.icon)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(section.tint)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 32, height: 32)
                     .background(section.tint.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                VStack(alignment: .leading, spacing: 3) {
+                    .clipShape(RoundedRectangle(cornerRadius: CmuxRadius.sm, style: .continuous))
+                VStack(alignment: .leading, spacing: CmuxSpacing.xxs) {
                     Text(L10n.string(section.titleKey))
-                        .cmuxMono(14, weight: .medium)
+                        .cmuxHeadline()
                         .foregroundStyle(CmuxTheme.ink)
                     Text(L10n.string(section.subtitleKey))
-                        .cmuxMono(11)
+                        .cmuxCaption()
                         .foregroundStyle(CmuxTheme.muted)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(CmuxTheme.muted)
+                    .foregroundStyle(CmuxTheme.mutedDim)
             }
-            .padding(14)
-            .background(CmuxTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(CmuxTheme.divider, lineWidth: 1)
-            )
+            .cmuxSurface()
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(section.accessibilityIdentifier)
@@ -106,7 +103,7 @@ struct SettingsView: View {
         title: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: CmuxSpacing.md) {
             CmuxRule(title: L10n.string(title))
             content()
         }
@@ -140,13 +137,13 @@ struct SettingsView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: CmuxSpacing.lg) {
                 content()
             }
             .frame(maxWidth: 920, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
+            .padding(.horizontal, CmuxSpacing.screen)
+            .padding(.vertical, CmuxSpacing.lg)
         }
         .background(CmuxTheme.canvas)
         .navigationTitle(L10n.string(title))
@@ -155,7 +152,7 @@ struct SettingsView: View {
 
     private var connectionSettings: some View {
         section(title: "connection") {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: CmuxSpacing.lg) {
                 labelRow("mode", color: CmuxTheme.muted)
                 Picker(L10n.string("Connection mode"), selection: connectionModeBinding) {
                     ForEach(ConnectionMode.allCases) { mode in
@@ -174,7 +171,7 @@ struct SettingsView: View {
 
                     labelRow("port", color: CmuxTheme.muted)
                     Stepper(value: $port, in: 1024...65535) {
-                        Text(String(port)).cmuxDisplay(14).foregroundStyle(CmuxTheme.accentBlue)
+                        Text(String(port)).cmuxHeadline().foregroundStyle(CmuxTheme.primary)
                     }
                 } else {
                     labelRow("server url", color: CmuxTheme.muted)
@@ -189,49 +186,79 @@ struct SettingsView: View {
                     SecureField(L10n.string("One-time pairing secret"), text: $pairingCode)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .cmuxInputStyle().accessibilityIdentifier("PairingCodeField")
+
+                    Button {
+                        pairingScanConfirmation = nil
+                        showPairingScanner = true
+                    } label: {
+                        HStack(spacing: CmuxSpacing.sm) {
+                            Image(systemName: "qrcode.viewfinder").font(.system(size: 12, weight: .bold))
+                            Text(L10n.string("[ SCAN QR FROM MAC ]")).cmuxDisplay(12)
+                        }
+                    }
+                    .buttonStyle(CmuxOutlineButtonStyle())
+                    .accessibilityIdentifier("ScanPairingQRButton")
+
+                    if let pairingScanConfirmation {
+                        Text(pairingScanConfirmation)
+                            .cmuxCaption()
+                            .foregroundStyle(CmuxTheme.success)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("PairingScanConfirmation")
+                    }
                 }
 
-                HStack(spacing: 8) {
-                    Circle().fill(color(for: store.connection)).frame(width: 6, height: 6)
-                    Text(label(store.connection)).cmuxMono(11).foregroundStyle(CmuxTheme.muted)
+                HStack(spacing: CmuxSpacing.sm) {
+                    Circle().fill(color(for: store.connection)).frame(width: 7, height: 7)
+                    Text(label(store.connection)).cmuxCaption().foregroundStyle(CmuxTheme.muted)
                     Spacer()
                 }
 
                 Button(action: onReconnect) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: CmuxSpacing.sm) {
                         Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .bold))
                         Text(L10n.string("[ SAVE & RECONNECT ]")).cmuxDisplay(12)
                     }
-                    .foregroundStyle(CmuxTheme.canvas)
-                    .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, minHeight: 36)
-                    .background(CmuxTheme.accentGreen)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CmuxFilledButtonStyle(tint: CmuxTheme.success))
                 .accessibilityIdentifier("ReconnectButton")
             }
         }
+        .sheet(isPresented: $showPairingScanner) {
+            PairingScannerView(
+                onScanned: { payload in
+                    apply(payload)
+                    showPairingScanner = false
+                },
+                onCancel: { showPairingScanner = false }
+            )
+        }
+    }
+
+    /// Scanning fills in the connection fields but deliberately does not
+    /// reconnect on its own: the user still confirms with SAVE & RECONNECT, so a
+    /// mis-scan cannot silently replace a working configuration.
+    private func apply(_ payload: PairingPayload) {
+        connectionModeRaw = ConnectionMode.broker.rawValue
+        brokerURL = payload.serverURL
+        relayId = payload.relayId
+        pairingCode = payload.pairingCode
+        pairingScanConfirmation = L10n.format("scanned %@ — tap save & reconnect", payload.relayId)
     }
 
     private var demoSettings: some View {
         section(title: "demo mode") {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: CmuxSpacing.md) {
                 Text(L10n.string("Mac이나 Tailscale 없이 앱을 둘러볼 수 있어요. 가짜 워크스페이스 / 터미널 / 알림이 채워집니다. App Review 평가 경로이기도 합니다."))
-                    .cmuxMono(11).foregroundStyle(CmuxTheme.muted).fixedSize(horizontal: false, vertical: true)
+                    .cmuxCaption().foregroundStyle(CmuxTheme.muted).fixedSize(horizontal: false, vertical: true)
                 Button(action: { demoMode.toggle(); onReconnect() }) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: CmuxSpacing.sm) {
                         Image(systemName: demoMode ? "checkmark.seal.fill" : "play.rectangle")
                             .font(.system(size: 12, weight: .bold))
                         Text(L10n.string(demoMode ? "[ EXIT DEMO MODE ]" : "[ TRY DEMO MODE ]")).cmuxDisplay(12)
                     }
-                    .foregroundStyle(CmuxTheme.canvas)
-                    .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, minHeight: 36)
-                    .background(demoMode ? CmuxTheme.accentYellow : CmuxTheme.accentBlue)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CmuxFilledButtonStyle(tint: demoMode ? CmuxTheme.warning : CmuxTheme.primary))
                 .accessibilityIdentifier("DemoModeToggle")
             }
         }
@@ -239,41 +266,30 @@ struct SettingsView: View {
 
     private var notificationSettings: some View {
         section(title: "notifications") {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: CmuxSpacing.md) {
                 Text(L10n.string("Manage notification permission, banners, and sounds in iOS Settings."))
-                    .cmuxMono(11).foregroundStyle(CmuxTheme.muted).fixedSize(horizontal: false, vertical: true)
+                    .cmuxCaption().foregroundStyle(CmuxTheme.muted).fixedSize(horizontal: false, vertical: true)
                 Button(action: openNotificationSettings) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: CmuxSpacing.sm) {
                         Image(systemName: "gearshape").font(.system(size: 12, weight: .bold))
                         Text(L10n.string("Open iOS notification settings")).cmuxDisplay(12)
                     }
-                    .foregroundStyle(CmuxTheme.ink)
-                    .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, minHeight: 36)
-                    .background(CmuxTheme.surfaceSunken)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(CmuxTheme.divider, lineWidth: 1))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CmuxOutlineButtonStyle())
 
                 if onTriggerTestNotification != nil {
                     Text(L10n.string("로컬 인젝션은 cmux 응답과 무관하게 Inbox + iOS 배너를 즉시 검증합니다. 라운드트립 라인은 relay → cmux → events.stream 경로 살아있는지 별도로 표시."))
-                        .cmuxMono(11).foregroundStyle(CmuxTheme.muted).fixedSize(horizontal: false, vertical: true)
+                        .cmuxCaption().foregroundStyle(CmuxTheme.muted).fixedSize(horizontal: false, vertical: true)
                     Button(action: triggerTestNotification) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: CmuxSpacing.sm) {
                             Image(systemName: "bell.badge").font(.system(size: 12, weight: .bold))
                             Text(L10n.string("[ SEND TEST NOTIFICATION ]")).cmuxDisplay(12)
                         }
-                        .foregroundStyle(CmuxTheme.canvas)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, minHeight: 36)
-                        .background(CmuxTheme.accentBlue)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(CmuxFilledButtonStyle())
                     .disabled(localStatus.isSending || roundTripStatus.isSending)
-                    if let line = localStatus.label { Text(L10n.format("local: %@", line)).cmuxMono(11).foregroundStyle(localStatus.color) }
-                    if let line = roundTripStatus.label { Text(L10n.format("round-trip: %@", line)).cmuxMono(11).foregroundStyle(roundTripStatus.color) }
+                    if let line = localStatus.label { Text(L10n.format("local: %@", line)).cmuxCaption().foregroundStyle(localStatus.color) }
+                    if let line = roundTripStatus.label { Text(L10n.format("round-trip: %@", line)).cmuxCaption().foregroundStyle(roundTripStatus.color) }
                 }
             }
         }
@@ -282,24 +298,18 @@ struct SettingsView: View {
     private var deviceSettings: some View {
         section(title: "device") {
             Button(role: .destructive, action: onDisconnect) {
-                HStack(spacing: 8) {
+                HStack(spacing: CmuxSpacing.sm) {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
                     Text(L10n.string("[ UNPAIR THIS DEVICE ]")).cmuxDisplay(12)
                 }
-                .foregroundStyle(CmuxTheme.accentRed)
-                .padding(.horizontal, 12)
-                .frame(maxWidth: .infinity, minHeight: 36)
-                .background(CmuxTheme.surfaceSunken)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(CmuxTheme.accentRed.opacity(0.45), lineWidth: 1))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CmuxOutlineButtonStyle(foreground: CmuxTheme.critical, border: CmuxTheme.critical.opacity(0.45)))
         }
     }
 
     private var appearanceSettings: some View {
         section(title: "appearance") {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: CmuxSpacing.md) {
                 labelRow("theme", color: CmuxTheme.muted)
                 Picker(L10n.string("Theme"), selection: $themeRaw) {
                     ForEach(CmuxColorTheme.allCases) { theme in
@@ -308,21 +318,9 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
 
-                HStack(spacing: 8) {
+                HStack(spacing: CmuxSpacing.sm) {
                     ForEach(CmuxColorTheme.allCases) { theme in
-                        Circle()
-                            .fill(CmuxTheme.previewColor(for: theme))
-                            .frame(width: 14, height: 14)
-                            .overlay {
-                                Circle().strokeBorder(
-                                    themeRaw == theme.rawValue ? CmuxTheme.ink : Color.clear,
-                                    lineWidth: 2
-                                )
-                            }
-                        Text(L10n.string(theme.titleKey))
-                            .cmuxMono(11)
-                            .foregroundStyle(themeRaw == theme.rawValue ? CmuxTheme.ink : CmuxTheme.muted)
-                        if theme != CmuxColorTheme.allCases.last { Spacer(minLength: 2) }
+                        themeSwatch(theme)
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -331,9 +329,41 @@ struct SettingsView: View {
         }
     }
 
+    private func themeSwatch(_ theme: CmuxColorTheme) -> some View {
+        let selected = themeRaw == theme.rawValue
+        return Button {
+            themeRaw = theme.rawValue
+        } label: {
+            HStack(spacing: CmuxSpacing.sm) {
+                Circle()
+                    .fill(CmuxTheme.previewColor(for: theme))
+                    .frame(width: 16, height: 16)
+                    .overlay {
+                        Circle().strokeBorder(
+                            selected ? CmuxTheme.ink : Color.clear,
+                            lineWidth: 2
+                        )
+                    }
+                Text(L10n.string(theme.titleKey))
+                    .cmuxCaption()
+                    .foregroundStyle(selected ? CmuxTheme.ink : CmuxTheme.muted)
+            }
+            .padding(.horizontal, CmuxSpacing.md)
+            .padding(.vertical, CmuxSpacing.sm)
+            .frame(maxWidth: .infinity)
+            .background(selected ? CmuxTheme.surfaceRaised : CmuxTheme.surfaceSunken)
+            .clipShape(RoundedRectangle(cornerRadius: CmuxRadius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CmuxRadius.sm, style: .continuous)
+                    .strokeBorder(selected ? CmuxTheme.borderStrong : CmuxTheme.divider, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     private var terminalSettings: some View {
         section(title: "terminal") {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: CmuxSpacing.lg) {
                 preferenceSlider(
                     title: "Terminal font size",
                     value: $terminalFontSize,
@@ -350,13 +380,13 @@ struct SettingsView: View {
 
                 HStack {
                     Text(L10n.string("Terminal history"))
-                        .cmuxMono(12)
+                        .cmuxCallout()
                         .foregroundStyle(CmuxTheme.ink)
                     Spacer()
                     Stepper(value: $terminalHistoryLines, in: 60...400, step: 20) {
                         Text(L10n.format("%lld lines", Int64(terminalHistoryLines)))
-                            .cmuxDisplay(10)
-                            .foregroundStyle(CmuxTheme.accentBlue)
+                            .cmuxDisplay(CmuxFont.Role.micro.size)
+                            .foregroundStyle(CmuxTheme.primary)
                     }
                     .accessibilityIdentifier("TerminalHistoryStepper")
                 }
@@ -365,7 +395,9 @@ struct SettingsView: View {
                 }
 
                 Toggle(L10n.string("Show CRT scanlines"), isOn: $terminalScanlines)
-                    .tint(CmuxTheme.accentBlue)
+                    .tint(CmuxTheme.primary)
+                    .cmuxCallout()
+                    .foregroundStyle(CmuxTheme.ink)
 
                 if terminalScanlines {
                     preferenceSlider(
@@ -382,31 +414,23 @@ struct SettingsView: View {
 
     private var interactionSettings: some View {
         section(title: "interaction") {
-            VStack(alignment: .leading, spacing: 14) {
-                Toggle(L10n.string("Use live input by default"), isOn: $defaultLiveInput)
-                    .tint(CmuxTheme.accentBlue)
-                Toggle(L10n.string("Keep keyboard open after sending"), isOn: $keepKeyboardAfterSubmit)
-                    .tint(CmuxTheme.accentBlue)
-                Toggle(L10n.string("Show terminal shortcut bar"), isOn: $showTerminalShortcutBar)
-                    .tint(CmuxTheme.accentBlue)
-                Toggle(L10n.string("Haptic feedback for terminal keys"), isOn: $terminalHaptics)
-                    .tint(CmuxTheme.accentBlue)
-                Toggle(L10n.string("Keep screen awake while using cmux Remote"), isOn: $keepScreenAwake)
-                    .tint(CmuxTheme.accentBlue)
+            VStack(alignment: .leading, spacing: CmuxSpacing.lg) {
+                Group {
+                    Toggle(L10n.string("Use live input by default"), isOn: $defaultLiveInput)
+                    Toggle(L10n.string("Keep keyboard open after sending"), isOn: $keepKeyboardAfterSubmit)
+                    Toggle(L10n.string("Show terminal shortcut bar"), isOn: $showTerminalShortcutBar)
+                    Toggle(L10n.string("Haptic feedback for terminal keys"), isOn: $terminalHaptics)
+                    Toggle(L10n.string("Keep screen awake while using cmux Remote"), isOn: $keepScreenAwake)
+                }
+                .tint(CmuxTheme.primary)
+                .cmuxCallout()
+                .foregroundStyle(CmuxTheme.ink)
 
                 Button(action: restoreAppearanceDefaults) {
                     Text(L10n.string("Restore preferences defaults"))
                         .cmuxDisplay(11)
-                        .foregroundStyle(CmuxTheme.ink)
-                        .frame(maxWidth: .infinity, minHeight: 34)
-                        .background(CmuxTheme.surfaceSunken)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(CmuxTheme.divider, lineWidth: 1)
-                        )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CmuxOutlineButtonStyle())
             }
         }
     }
@@ -418,18 +442,18 @@ struct SettingsView: View {
         step: Double,
         showsPoints: Bool = true
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: CmuxSpacing.sm) {
             HStack {
                 Text(L10n.string(title))
-                    .cmuxMono(12)
+                    .cmuxCallout()
                     .foregroundStyle(CmuxTheme.ink)
                 Spacer()
                 Text(sliderValueLabel(value.wrappedValue, showsPoints: showsPoints))
-                    .cmuxDisplay(10)
-                    .foregroundStyle(CmuxTheme.accentBlue)
+                    .cmuxDisplay(CmuxFont.Role.micro.size)
+                    .foregroundStyle(CmuxTheme.primary)
             }
             Slider(value: value, in: range, step: step)
-                .tint(CmuxTheme.accentBlue)
+                .tint(CmuxTheme.primary)
         }
     }
 
@@ -462,22 +486,16 @@ struct SettingsView: View {
     }
 
     private func section<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: CmuxSpacing.md) {
             CmuxRule(title: L10n.string(title))
             content()
         }
-        .padding(14)
-        .background(CmuxTheme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(CmuxTheme.divider, lineWidth: 1)
-        )
+        .cmuxSurface()
     }
 
     private func labelRow(_ text: String, color: Color) -> some View {
-        Text(L10n.string(text).uppercased())
-            .cmuxDisplay(10)
+        Text(L10n.string(text))
+            .cmuxEyebrow()
             .foregroundStyle(color)
     }
 
@@ -493,9 +511,9 @@ struct SettingsView: View {
     }
 
     private var connectionGuide: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: CmuxSpacing.md) {
             CmuxRule(title: L10n.string("tutorial"))
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: CmuxSpacing.md) {
                 if connectionMode == .direct {
                     GuideStep(number: 1,
                               title: "Mac에서 cmux와 Tailscale을 켭니다.",
@@ -522,20 +540,14 @@ struct SettingsView: View {
                           detail: "Workspaces가 보이면 연결이 완료된 상태입니다.")
             }
         }
-        .padding(14)
-        .background(CmuxTheme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(CmuxTheme.divider, lineWidth: 1)
-        )
+        .cmuxSurface()
     }
 
     private func color(for state: ConnectionState) -> Color {
         switch state {
-        case .connected:    return CmuxTheme.accentGreen
-        case .connecting:   return CmuxTheme.accentYellow
-        case .error:        return CmuxTheme.accentRed
+        case .connected:    return CmuxTheme.success
+        case .connecting:   return CmuxTheme.warning
+        case .error:        return CmuxTheme.critical
         case .disconnected: return CmuxTheme.muted
         }
     }
@@ -574,14 +586,14 @@ struct SettingsView: View {
 private extension View {
     func cmuxInputStyle() -> some View {
         self
-            .cmuxMono(13)
+            .cmuxCallout()
             .foregroundStyle(CmuxTheme.ink)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, CmuxSpacing.md)
+            .padding(.vertical, CmuxSpacing.md - CmuxSpacing.xxs)
             .background(CmuxTheme.surfaceSunken)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CmuxRadius.sm, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: CmuxRadius.sm, style: .continuous)
                     .strokeBorder(CmuxTheme.divider, lineWidth: 1)
             )
     }
@@ -673,8 +685,8 @@ private enum TestNotificationStatus: Equatable {
 
     var color: Color {
         switch self {
-        case .failed: return CmuxTheme.accentRed
-        case .sent: return CmuxTheme.accentGreen
+        case .failed: return CmuxTheme.critical
+        case .sent: return CmuxTheme.success
         default: return CmuxTheme.muted
         }
     }
@@ -686,24 +698,24 @@ private struct GuideStep: View {
     let detail: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: CmuxSpacing.md) {
             Text(String(format: "%02d", number))
                 .cmuxDisplay(11)
-                .foregroundStyle(CmuxTheme.accentGreen)
-                .frame(width: 22, height: 22)
+                .foregroundStyle(CmuxTheme.success)
+                .frame(width: 24, height: 24)
                 .background(CmuxTheme.surfaceSunken)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: CmuxRadius.sm, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    RoundedRectangle(cornerRadius: CmuxRadius.sm, style: .continuous)
                         .strokeBorder(CmuxTheme.divider, lineWidth: 1)
                 )
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: CmuxSpacing.xxs) {
                 Text(L10n.string(title))
-                    .cmuxMono(13, weight: .medium)
+                    .cmuxCallout()
                     .foregroundStyle(CmuxTheme.ink)
                 Text(L10n.string(detail))
-                    .cmuxMono(11)
+                    .cmuxCaption()
                     .foregroundStyle(CmuxTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }

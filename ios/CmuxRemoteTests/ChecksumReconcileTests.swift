@@ -48,23 +48,58 @@ actor StubRPCDispatch: RPCDispatch {
     private var surfaces: [(id: String, title: String)]
     private var workspaceExtras: [String: [String: JSONValue]]
     private var historyRequests = 0
+    /// Optional multi-window fixture: `window.list` reports these, and
+    /// `workspace.list` returns the per-window workspaces when scoped.
+    private var windows: [(id: String, ref: String, isKey: Bool)]
+    private var workspacesByWindow: [String: [(id: String, title: String)]]
 
     init(
         workspaces: [(String, String)] = [("w1", "Demo")],
         surfaces: [(String, String)] = [("s1", "shell")],
-        workspaceExtras: [String: [String: JSONValue]] = [:]
+        workspaceExtras: [String: [String: JSONValue]] = [:],
+        windows: [(String, String, Bool)] = [],
+        workspacesByWindow: [String: [(String, String)]] = [:]
     ) {
         self.workspaces = workspaces.map { (id: $0.0, title: $0.1) }
         self.surfaces = surfaces.map { (id: $0.0, title: $0.1) }
         self.workspaceExtras = workspaceExtras
+        self.windows = windows.map { (id: $0.0, ref: $0.1, isKey: $0.2) }
+        self.workspacesByWindow = workspacesByWindow.mapValues { list in
+            list.map { (id: $0.0, title: $0.1) }
+        }
     }
 
     func call(method: String, params: JSONValue) async throws -> RPCResponse {
         calls.append((method, params))
         switch method {
-        case "workspace.list":
+        case "window.list":
+            guard !windows.isEmpty else {
+                return RPCResponse(
+                    id: "stub",
+                    error: RPCError(code: "unknown_method", message: "window.list unsupported")
+                )
+            }
             return RPCResponse(id: "stub", result: .object([
-                "workspaces": .array(workspaces.enumerated().map { index, workspace in
+                "windows": .array(windows.enumerated().map { index, window in
+                    .object([
+                        "id": .string(window.id),
+                        "ref": .string(window.ref),
+                        "index": .int(Int64(index)),
+                        "workspace_count": .int(Int64((workspacesByWindow[window.id] ?? []).count)),
+                        "key": .bool(window.isKey),
+                    ])
+                }),
+            ]))
+        case "workspace.list":
+            var listed = workspaces
+            if case .object(let params) = params,
+               case .string(let windowId)? = params["window_id"],
+               let scoped = workspacesByWindow[windowId]
+            {
+                listed = scoped
+            }
+            return RPCResponse(id: "stub", result: .object([
+                "workspaces": .array(listed.enumerated().map { index, workspace in
                     var payload: [String: JSONValue] = [
                         "id": .string(workspace.id),
                         "title": .string(workspace.title),

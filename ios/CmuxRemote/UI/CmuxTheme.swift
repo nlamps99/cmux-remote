@@ -31,6 +31,7 @@ enum CmuxTheme {
         let mutedDim: Color
         let divider: Color
         let border: Color
+        let borderStrong: Color
         let accentBlue: Color
         let accentCyan: Color
         let accentTeal: Color
@@ -41,6 +42,8 @@ enum CmuxTheme {
         let accentMagenta: Color
         let accentPurple: Color
         let terminalText: Color
+        /// Brand seed used for neutral previews so it stays consistent across themes.
+        let brand: Color
     }
 
     /// Resolve from the persisted preference on every SwiftUI update.  This
@@ -54,7 +57,7 @@ enum CmuxTheme {
     }
 
     static func previewColor(for theme: CmuxColorTheme) -> Color {
-        palette(for: theme).accentBlue
+        palette(for: theme).brand
     }
 
     static var canvas: Color { activePalette.canvas }
@@ -78,6 +81,22 @@ enum CmuxTheme {
     static var accentMagenta: Color { activePalette.accentMagenta }
     static var accentPurple: Color { activePalette.accentPurple }
     static var terminalText: Color { activePalette.terminalText }
+    static var borderStrong: Color { activePalette.borderStrong }
+    static var brand: Color { activePalette.brand }
+
+    // MARK: Semantic color roles
+    // Use these for meaning (state, intent) rather than raw hues so the whole
+    // app speaks one language regardless of the active theme.
+    static var success: Color { activePalette.accentGreen }
+    static var warning: Color { activePalette.accentYellow }
+    static var info: Color { activePalette.accentBlue }
+    static var critical: Color { activePalette.accentRed }
+    /// Primary interactive tint (buttons, selection, focus rings).
+    static var primary: Color { activePalette.accentBlue }
+    /// On-primary content color for text/icons sitting on `primary` fills.
+    static var onPrimary: Color { activePalette.canvas }
+    /// Default focus ring / active input border.
+    static var focus: Color { activePalette.accentBlue }
 
     // Legacy aliases used by older view code.
     static var card: Color { surface }
@@ -103,30 +122,36 @@ enum CmuxTheme {
                 canvas: hex(0x1A1B26), surface: hex(0x24283B), surfaceRaised: hex(0x292E42),
                 surfaceSunken: hex(0x1F2335), terminal: hex(0x16161E), ink: hex(0xC0CAF5),
                 inkDim: hex(0xA9B1D6), muted: hex(0x565F89), mutedDim: hex(0x414868),
-                divider: hex(0x3B4261), border: hex(0x545C7E), accentBlue: hex(0x7AA2F7),
+                divider: hex(0x3B4261), border: hex(0x545C7E), borderStrong: hex(0x7AA2F7),
+                accentBlue: hex(0x7AA2F7),
                 accentCyan: hex(0x7DCFFF), accentTeal: hex(0x1ABC9C), accentGreen: hex(0x9ECE6A),
                 accentYellow: hex(0xE0AF68), accentOrange: hex(0xFF9E64), accentRed: hex(0xF7768E),
-                accentMagenta: hex(0xBB9AF7), accentPurple: hex(0x9D7CD8), terminalText: hex(0xF1F2F8)
+                accentMagenta: hex(0xBB9AF7), accentPurple: hex(0x9D7CD8), terminalText: hex(0xF1F2F8),
+                brand: hex(0x7AA2F7)
             )
         case .ocean:
             return Palette(
                 canvas: hex(0x0B1724), surface: hex(0x102538), surfaceRaised: hex(0x143047),
                 surfaceSunken: hex(0x0E2032), terminal: hex(0x07131F), ink: hex(0xD6EDFF),
                 inkDim: hex(0xA8C5DB), muted: hex(0x5F829E), mutedDim: hex(0x34536B),
-                divider: hex(0x28445E), border: hex(0x41647E), accentBlue: hex(0x60A5FA),
+                divider: hex(0x28445E), border: hex(0x41647E), borderStrong: hex(0x60A5FA),
+                accentBlue: hex(0x60A5FA),
                 accentCyan: hex(0x67E8F9), accentTeal: hex(0x2DD4BF), accentGreen: hex(0x86EFAC),
                 accentYellow: hex(0xFCD34D), accentOrange: hex(0xFDBA74), accentRed: hex(0xFB7185),
-                accentMagenta: hex(0xF0ABFC), accentPurple: hex(0xC4B5FD), terminalText: hex(0xF4FAFF)
+                accentMagenta: hex(0xF0ABFC), accentPurple: hex(0xC4B5FD), terminalText: hex(0xF4FAFF),
+                brand: hex(0x60A5FA)
             )
         case .graphite:
             return Palette(
                 canvas: hex(0x171717), surface: hex(0x242424), surfaceRaised: hex(0x303030),
                 surfaceSunken: hex(0x1E1E1E), terminal: hex(0x101010), ink: hex(0xF5F5F5),
                 inkDim: hex(0xD4D4D4), muted: hex(0x8A8A8A), mutedDim: hex(0x525252),
-                divider: hex(0x454545), border: hex(0x666666), accentBlue: hex(0xA3E635),
+                divider: hex(0x454545), border: hex(0x666666), borderStrong: hex(0x8A8A8A),
+                accentBlue: hex(0xA3E635),
                 accentCyan: hex(0x67E8F9), accentTeal: hex(0x5EEAD4), accentGreen: hex(0xBEF264),
                 accentYellow: hex(0xFDE047), accentOrange: hex(0xFDBA74), accentRed: hex(0xFDA4AF),
-                accentMagenta: hex(0xF5D0FE), accentPurple: hex(0xDDD6FE), terminalText: hex(0xFAFAFA)
+                accentMagenta: hex(0xF5D0FE), accentPurple: hex(0xDDD6FE), terminalText: hex(0xFAFAFA),
+                brand: hex(0xBEF264)
             )
         }
     }
@@ -141,12 +166,82 @@ private func hex(_ rgb: UInt32, alpha: Double = 1) -> Color {
     return Color(.sRGB, red: r, green: g, blue: b, opacity: alpha)
 }
 
+// MARK: - Design tokens
+// A single source of truth for spacing, radii, and elevation so views compose
+// on a consistent rhythm instead of sprinkling magic numbers.
+
+enum CmuxSpacing {
+    /// 2 — hairline gaps between tightly-coupled glyphs.
+    static let xxs: CGFloat = 2
+    /// 4 — inside a control (icon ↔ label).
+    static let xs: CGFloat = 4
+    /// 8 — related items in a row.
+    static let sm: CGFloat = 8
+    /// 12 — default gap between fields inside a card.
+    static let md: CGFloat = 12
+    /// 16 — gap between sibling cards / sections.
+    static let lg: CGFloat = 16
+    /// 24 — major section separation.
+    static let xl: CGFloat = 24
+    /// 32 — screen-level breathing room.
+    static let xxl: CGFloat = 32
+
+    /// Inner padding for cards and grouped surfaces.
+    static let card: CGFloat = 16
+    /// Horizontal screen margin.
+    static let screen: CGFloat = 20
+}
+
+enum CmuxRadius {
+    /// 6 — chips, key-caps, tight controls.
+    static let sm: CGFloat = 6
+    /// 10 — buttons, inputs, list rows.
+    static let md: CGFloat = 10
+    /// 14 — cards / grouped surfaces.
+    static let lg: CGFloat = 14
+    /// 20 — sheets / large containers.
+    static let xl: CGFloat = 20
+    /// Fully rounded pill.
+    static let pill: CGFloat = 999
+}
+
+enum CmuxElevation {
+    /// Standard control height so buttons, steppers, and inputs align.
+    static let controlHeight: CGFloat = 44
+    static let compactControlHeight: CGFloat = 36
+    static let hairline: CGFloat = 1
+}
+
 // MARK: - Fonts
 // Display = Departure Mono (pixel, headers / labels / chips).
 // Body    = Geist Mono (clean monospace, readable body / terminals).
 // Falls back gracefully to system .monospaced if the bundled font isn't loaded.
 
 enum CmuxFont {
+    /// Semantic type scale. Sizes step on a musical-ish ratio so hierarchy
+    /// reads clearly instead of relying on arbitrary point values.
+    enum Role {
+        case largeTitle   // screen title
+        case title        // detail-page / card title
+        case headline     // emphasised row label
+        case body         // default reading size
+        case callout      // secondary body
+        case caption      // metadata / helper text
+        case micro        // tiny labels, badges
+
+        var size: CGFloat {
+            switch self {
+            case .largeTitle: return 26
+            case .title:      return 18
+            case .headline:   return 15
+            case .body:       return 14
+            case .callout:    return 13
+            case .caption:    return 12
+            case .micro:      return 10
+            }
+        }
+    }
+
     static func display(_ size: CGFloat) -> Font {
         // 11pt grid recommended by Departure Mono author for pixel-perfect rendering.
         .custom("DepartureMono-Regular", size: size, relativeTo: .body)
@@ -176,6 +271,44 @@ extension View {
     func cmuxMono(_ size: CGFloat = 13, weight: CmuxFont.Weight = .regular) -> some View {
         font(CmuxFont.body(size, weight: weight))
     }
+
+    // MARK: Semantic text styles
+
+    /// Screen title (pixel display font).
+    func cmuxLargeTitle() -> some View {
+        cmuxDisplay(CmuxFont.Role.largeTitle.size)
+    }
+
+    /// Section / card / detail title.
+    func cmuxTitle() -> some View {
+        cmuxMono(CmuxFont.Role.title.size, weight: .bold)
+    }
+
+    /// Emphasised row heading.
+    func cmuxHeadline() -> some View {
+        cmuxMono(CmuxFont.Role.headline.size, weight: .medium)
+    }
+
+    /// Default reading text.
+    func cmuxBody() -> some View {
+        cmuxMono(CmuxFont.Role.body.size)
+    }
+
+    /// Secondary body text.
+    func cmuxCallout() -> some View {
+        cmuxMono(CmuxFont.Role.callout.size)
+    }
+
+    /// Metadata / helper caption.
+    func cmuxCaption() -> some View {
+        cmuxMono(CmuxFont.Role.caption.size)
+    }
+
+    /// Uppercase pixel eyebrow label used above fields and in section rules.
+    func cmuxEyebrow() -> some View {
+        cmuxDisplay(CmuxFont.Role.micro.size)
+            .textCase(.uppercase)
+    }
 }
 
 // MARK: - Surface styling
@@ -187,11 +320,66 @@ extension View {
     }
 
     /// Adds an ASCII-style 1px border in Tokyo Night divider colour.
-    func cmuxHairline(_ color: Color = CmuxTheme.divider, corner: CGFloat = 12) -> some View {
+    func cmuxHairline(_ color: Color = CmuxTheme.divider, corner: CGFloat = CmuxRadius.lg) -> some View {
         overlay(
             RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .strokeBorder(color, lineWidth: 1)
+                .strokeBorder(color, lineWidth: CmuxElevation.hairline)
         )
+    }
+
+    /// Standard grouped surface: raised fill, hairline border, rounded corners.
+    /// Use for cards and section containers so they share one visual weight.
+    func cmuxSurface(
+        padding: CGFloat = CmuxSpacing.card,
+        corner: CGFloat = CmuxRadius.md,
+        fill: Color = CmuxTheme.surface,
+        border: Color = CmuxTheme.divider
+    ) -> some View {
+        self
+            .padding(padding)
+            .background(fill)
+            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .strokeBorder(border, lineWidth: CmuxElevation.hairline)
+            )
+    }
+}
+
+// MARK: - Buttons
+
+/// Filled primary action. Tinted with a semantic color, uses on-primary text.
+struct CmuxFilledButtonStyle: ButtonStyle {
+    var tint: Color = CmuxTheme.primary
+    var foreground: Color = CmuxTheme.onPrimary
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(foreground)
+            .frame(maxWidth: .infinity, minHeight: CmuxElevation.compactControlHeight)
+            .padding(.horizontal, CmuxSpacing.md)
+            .background(tint.opacity(configuration.isPressed ? 0.82 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: CmuxRadius.sm, style: .continuous))
+            .opacity(configuration.isPressed ? 0.95 : 1)
+    }
+}
+
+/// Secondary / neutral action drawn as a bordered sunken surface.
+struct CmuxOutlineButtonStyle: ButtonStyle {
+    var foreground: Color = CmuxTheme.ink
+    var border: Color = CmuxTheme.divider
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(foreground)
+            .frame(maxWidth: .infinity, minHeight: CmuxElevation.compactControlHeight)
+            .padding(.horizontal, CmuxSpacing.md)
+            .background(configuration.isPressed ? CmuxTheme.surfaceRaised : CmuxTheme.surfaceSunken)
+            .clipShape(RoundedRectangle(cornerRadius: CmuxRadius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CmuxRadius.sm, style: .continuous)
+                    .strokeBorder(border, lineWidth: CmuxElevation.hairline)
+            )
     }
 }
 
@@ -268,6 +456,13 @@ struct CmuxChip<Label: View>: View {
 }
 
 // MARK: - Scanline shader application
+//
+// Currently unused. The terminal viewport draws scanlines with
+// `TerminalScanlineOverlay` instead: this shader goes through `layerEffect`,
+// which re-rasterises its subtree every frame, and the viewport is a live
+// `UICollectionView`. Kept for static surfaces where that cost is acceptable —
+// wire it up deliberately, and re-measure scrolling if you attach it to
+// anything that scrolls.
 
 extension View {
     /// Applies a CRT scanline + subtle RGB shift to the layer. Intended for the

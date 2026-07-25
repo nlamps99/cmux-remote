@@ -14,6 +14,11 @@ public final class WorkspaceStore {
     public var selectedId: String?
     public var surfacesByWorkspaceId: [String: [Surface]] = [:]
     public var connection: ConnectionState = .disconnected
+    /// How the app reached the relay for this connection. Surfaced on the
+    /// workspace list because the two paths differ in latency and in whether the
+    /// link is encrypted, so "which one am I on" is worth seeing at a glance —
+    /// especially under `auto`, where the app picks without being asked.
+    public var activeTransport: ActiveTransport?
     public var onWorkspaceAlert: (@MainActor (NotificationRecord) -> Void)?
 
     private let rpc: any RPCDispatch
@@ -181,6 +186,7 @@ public final class WorkspaceStore {
         selectedId = nil
         surfacesByWorkspaceId = [:]
         connection = .disconnected
+        activeTransport = nil
         seenWorkspaceAlertIds = []
     }
 
@@ -199,4 +205,37 @@ public enum ConnectionState: Equatable {
     case connecting
     case connected
     case error(String)
+}
+
+/// The transport a live connection is actually using.
+///
+/// Deliberately coarser than `RelayEndpoint`: the header needs to answer "LAN or
+/// internet, encrypted or not", not to echo the address back at the user.
+public enum ActiveTransport: Equatable, Sendable {
+    /// Plain HTTP over the local network — fastest, but not encrypted.
+    case lan
+    /// WireGuard-encrypted peer-to-peer over the tailnet.
+    case tailscale
+    /// TLS to the self-hosted broker, which relays to the Mac.
+    case broker
+
+    public var shortLabel: String {
+        switch self {
+        case .lan: return L10n.string("LAN")
+        case .tailscale: return L10n.string("TAILSCALE")
+        case .broker: return L10n.string("VPS")
+        }
+    }
+
+    /// True when the link carries terminal traffic in the clear, so the UI can
+    /// mark it rather than letting it look equivalent to the encrypted paths.
+    public var isPlaintext: Bool { self == .lan }
+
+    public var accessibilityDescription: String {
+        switch self {
+        case .lan: return L10n.string("Connected over the local network, not encrypted")
+        case .tailscale: return L10n.string("Connected over Tailscale, encrypted")
+        case .broker: return L10n.string("Connected through the server, encrypted")
+        }
+    }
 }

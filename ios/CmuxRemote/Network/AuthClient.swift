@@ -54,35 +54,49 @@ public final class AuthClient: @unchecked Sendable {
     public func registerIfNeeded() async throws {
         try endpoint.validate()
         let identity = try endpoint.credentialIdentity()
-        if let storedIdentity = try storedCredentialIdentity(currentIdentity: identity),
-           storedIdentity != identity {
-            try clearCredentials()
-        }
-        if try keychain.get("bearer") != nil,
-           try keychain.get("device_id") != nil,
-           try storedCredentialIdentity(currentIdentity: identity) == identity {
+        migrateLegacyCredentialsIfNeeded(identity: identity)
+        if try credential(.bearer, identity: identity) != nil,
+           try credential(.deviceId, identity: identity) != nil {
             return
         }
         var request = URLRequest(url: try endpoint.registrationURL())
         request.httpMethod = "POST"
-        if endpoint.mode == .broker {
+        if endpoint.requiresPairingCode {
             guard !pairingCode.isEmpty else { throw AuthError.missingPairingCode }
             guard !clientId.isEmpty, !deviceName.isEmpty else { throw AuthError.invalidRegistration }
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONEncoder().encode(BrokerRegisterRequest(
-                relayId: endpoint.relayId.trimmingCharacters(in: .whitespacesAndNewlines),
-                pairingCode: pairingCode,
-                clientId: clientId,
-                deviceName: deviceName
-            ))
+            // The direct-LAN relay identifies one Mac by host, so it takes the
+            // same body minus `relay_id`.
+            if endpoint.mode == .broker {
+                request.httpBody = try JSONEncoder().encode(BrokerRegisterRequest(
+                    relayId: endpoint.relayId.trimmingCharacters(in: .whitespacesAndNewlines),
+                    pairingCode: pairingCode,
+                    clientId: clientId,
+                    deviceName: deviceName
+                ))
+            } else {
+                request.httpBody = try JSONEncoder().encode(LANRegisterRequest(
+                    pairingCode: pairingCode,
+                    clientId: clientId,
+                    deviceName: deviceName
+                ))
+            }
         }
         let (data, code) = try await http.request(request)
         guard code == 200 else { throw AuthError.relayRejected(code) }
         let payload = try JSONDecoder().decode(RegisterResponse.self, from: data)
-        try keychain.set(payload.deviceId, for: "device_id")
-        try keychain.set(payload.token, for: "bearer")
-        try keychain.set(identity, for: "relay_endpoint")
-        if let host = endpoint.legacyHost { try keychain.set(host, for: "relay_host") }
+        try setCredential(.deviceId, payload.deviceId, identity: identity)
+        try setCredential(.bearer, payload.token, identity: identity)
+    }
+
+    /// The bearer + device id currently held for this endpoint, or nil when the
+    /// endpoint has never paired.
+    public func storedCredentials() throws -> (token: String, deviceId: String)? {
+        let identity = try endpoint.credentialIdentity()
+        guard let token = try credential(.bearer, identity: identity),
+              let deviceId = try credential(.deviceId, identity: identity)
+        else { return nil }
+        return (token, deviceId)
     }
 
     public func registerAPNsTokenHex(
@@ -92,9 +106,8 @@ public final class AuthClient: @unchecked Sendable {
         try endpoint.validate()
         let identity = try endpoint.credentialIdentity()
         guard !tokenHex.isEmpty else { throw AuthError.invalidAPNsToken }
-        guard let bearer = try keychain.get("bearer"),
-              try keychain.get("device_id") != nil,
-              try storedCredentialIdentity(currentIdentity: identity) == identity
+        guard let bearer = try credential(.bearer, identity: identity),
+              try credential(.deviceId, identity: identity) != nil
         else {
             throw AuthError.missingBearer
         }
@@ -111,25 +124,52 @@ public final class AuthClient: @unchecked Sendable {
     }
 
     public func wipe() throws {
-        try clearCredentials()
+        try keychain.wipe()
     }
 
-    private func storedCredentialIdentity(currentIdentity: String) throws -> String? {
-        if let identity = try keychain.get("relay_endpoint") { return identity }
-        if endpoint.mode == .direct,
-           let legacyHost = try keychain.get("relay_host")?.lowercased(),
-           legacyHost == endpoint.legacyHost {
-            return currentIdentity
-        }
-        if let legacyHost = try keychain.get("relay_host") { return "legacy|\(legacyHost)" }
-        return nil
+    // MARK: - Per-endpoint credential storage
+
+    /// Credentials are stored under a key that includes the endpoint identity,
+    /// so a phone that alternates between the LAN relay and the broker keeps
+    /// both bearers. The two transports mint tokens from separate device stores
+    /// — the Mac's `devices.json` and the broker's — so one cannot stand in for
+    /// the other, and overwriting on every switch would force a re-pair that
+    /// the broker cannot satisfy once its one-time pairing code is consumed.
+    enum CredentialKind: String {
+        case bearer
+        case deviceId = "device_id"
     }
 
-    private func clearCredentials() throws {
-        try keychain.delete("device_id")
-        try keychain.delete("bearer")
-        try keychain.delete("relay_host")
-        try keychain.delete("relay_endpoint")
+    static func keychainKey(_ kind: CredentialKind, identity: String) -> String {
+        "\(kind.rawValue)|\(identity)"
+    }
+
+    private func credential(_ kind: CredentialKind, identity: String) throws -> String? {
+        try keychain.get(Self.keychainKey(kind, identity: identity))
+    }
+
+    private func setCredential(_ kind: CredentialKind, _ value: String, identity: String) throws {
+        try keychain.set(value, for: Self.keychainKey(kind, identity: identity))
+    }
+
+    /// Moves a pre-namespacing install's credentials onto the new key for the
+    /// endpoint they belonged to, so upgrading does not silently re-pair.
+    ///
+    /// Failures are ignored: the fallback is a normal registration, which is
+    /// what an un-migrated install would have done anyway.
+    private func migrateLegacyCredentialsIfNeeded(identity: String) {
+        guard (try? credential(.bearer, identity: identity)) == nil else { return }
+        guard let legacyToken = try? keychain.get("bearer"),
+              let legacyDeviceId = try? keychain.get("device_id"),
+              let legacyIdentity = try? keychain.get("relay_endpoint"),
+              legacyIdentity == identity
+        else { return }
+        try? setCredential(.bearer, legacyToken, identity: identity)
+        try? setCredential(.deviceId, legacyDeviceId, identity: identity)
+        try? keychain.delete("bearer")
+        try? keychain.delete("device_id")
+        try? keychain.delete("relay_endpoint")
+        try? keychain.delete("relay_host")
     }
 }
 
@@ -167,6 +207,18 @@ private struct BrokerRegisterRequest: Encodable {
     }
 }
 
+private struct LANRegisterRequest: Encodable {
+    let pairingCode: String
+    let clientId: String
+    let deviceName: String
+
+    enum CodingKeys: String, CodingKey {
+        case pairingCode = "pairing_code"
+        case clientId = "client_id"
+        case deviceName = "device_name"
+    }
+}
+
 public enum APNsRegistrationEnvironment: String, Codable, Sendable, Equatable {
     case sandbox
     case prod
@@ -188,7 +240,7 @@ extension AuthError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .invalidURL: return L10n.string("Invalid relay URL")
-        case .disallowedHost: return L10n.string("Direct mode requires a Tailscale host or 100.64.0.0/10 address")
+        case .disallowedHost: return L10n.string("Direct mode needs a Tailscale host or a private LAN address")
         case .insecureBrokerURL: return L10n.string("Server mode requires an HTTPS URL")
         case .missingRelayId: return L10n.string("Relay ID is required")
         case .missingPairingCode: return L10n.string("Pairing code is required")

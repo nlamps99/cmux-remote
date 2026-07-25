@@ -13,6 +13,9 @@ struct CmuxRemoteApp: App {
     @State private var notifPresenter = LocalNotificationPresenter()
     @State private var bootstrapped = false
     @State private var activeRPC: RPCClient?
+    @State private var transportCoordinator = TransportCoordinator {
+        CmuxRemoteApp.resolveTransportSettings()
+    }
     @State private var splashFinished = Self.shouldSkipSplash()
     @AppStorage("cmux.demoMode") private var demoMode: Bool = false
     @AppStorage("cmux.theme") private var themeRaw: String = CmuxColorTheme.storm.rawValue
@@ -94,33 +97,102 @@ struct CmuxRemoteApp: App {
         defaults: UserDefaults = .standard
     ) {
         let environment = info.environment
-        guard environment["CMUX_PERSIST_CONNECTION_SETTINGS"] == "1",
-              let modeRaw = environment["CMUX_CONNECTION_MODE"],
-              let mode = ConnectionMode(rawValue: modeRaw)
-        else { return }
+        guard environment["CMUX_PERSIST_CONNECTION_SETTINGS"] == "1" else { return }
+        let preferenceRaw = environment["CMUX_TRANSPORT_PREFERENCE"]
+            ?? environment["CMUX_CONNECTION_MODE"]
+            ?? ""
+        guard let preference = TransportPreference(rawValue: preferenceRaw) else { return }
 
-        switch mode {
-        case .direct:
-            guard let host = environment["CMUX_HOST"], !host.isEmpty else { return }
-            defaults.set(ConnectionMode.direct.rawValue, forKey: "cmux.connectionMode")
+        func persistDirect() -> Bool {
+            guard let host = environment["CMUX_HOST"], !host.isEmpty else { return false }
             defaults.set(host, forKey: "cmux.host")
             if let port = Int(environment["CMUX_PORT"] ?? ""), port > 0 {
                 defaults.set(port, forKey: "cmux.port")
             }
+            if let code = environment["CMUX_LAN_PAIRING_CODE"], !code.isEmpty {
+                defaults.set(code, forKey: "cmux.lanPairingCode")
+            }
+            return true
+        }
 
-        case .broker:
+        func persistBroker() -> Bool {
             guard let brokerURL = environment["CMUX_BROKER_URL"],
                   let relayId = environment["CMUX_RELAY_ID"],
                   let pairingCode = environment["CMUX_PAIRING_CODE"],
                   !brokerURL.isEmpty,
                   !relayId.isEmpty,
                   !pairingCode.isEmpty
-            else { return }
-            defaults.set(ConnectionMode.broker.rawValue, forKey: "cmux.connectionMode")
+            else { return false }
             defaults.set(brokerURL, forKey: "cmux.brokerURL")
             defaults.set(relayId, forKey: "cmux.relayId")
             defaults.set(pairingCode, forKey: "cmux.pairingCode")
+            return true
         }
+
+        switch preference {
+        case .direct:
+            guard persistDirect() else { return }
+        case .broker:
+            guard persistBroker() else { return }
+        case .auto:
+            // Auto needs both halves to be meaningful; refuse a partial seed
+            // rather than persisting a preference that can only ever resolve one
+            // way.
+            guard persistDirect(), persistBroker() else { return }
+        }
+        defaults.set(preference.rawValue, forKey: "cmux.transportPreference")
+    }
+
+    /// Reads the transport preference and both candidate endpoints from the
+    /// environment (simulator smoke tests) falling back to `UserDefaults`.
+    ///
+    /// The direct candidate's host does double duty: it holds either a tailnet
+    /// address or a private-LAN one, and `RelayEndpoint.requiresPairingCode`
+    /// decides which pairing path applies. That keeps one host field in Settings
+    /// instead of two that mean almost the same thing.
+    static func resolveTransportSettings(
+        _ info: ProcessInfo = .processInfo,
+        defaults: UserDefaults = .standard
+    ) -> (preference: TransportPreference, candidates: TransportCandidates) {
+        let environment = info.environment
+        func value(_ key: String, _ defaultsKey: String) -> String {
+            let fromEnvironment = environment[key] ?? ""
+            if !fromEnvironment.isEmpty { return fromEnvironment }
+            return defaults.string(forKey: defaultsKey) ?? ""
+        }
+
+        let preferenceRaw = environment["CMUX_TRANSPORT_PREFERENCE"]
+            ?? defaults.string(forKey: "cmux.transportPreference")
+            // Pre-auto installs only stored a concrete mode; carry it forward so
+            // upgrading never silently changes which transport is used.
+            ?? environment["CMUX_CONNECTION_MODE"]
+            ?? defaults.string(forKey: "cmux.connectionMode")
+            ?? TransportPreference.direct.rawValue
+        let preference = TransportPreference(rawValue: preferenceRaw) ?? .direct
+
+        let host = value("CMUX_HOST", "cmux.host")
+        let envPort = Int(environment["CMUX_PORT"] ?? "") ?? 0
+        let storedPort = defaults.integer(forKey: "cmux.port")
+        let port = envPort > 0 ? envPort : (storedPort == 0 ? 4399 : storedPort)
+        let directEndpoint: RelayEndpoint? = host.isEmpty
+            ? nil
+            : .direct(host: host, port: port)
+
+        let brokerURL = value("CMUX_BROKER_URL", "cmux.brokerURL")
+        let relayId = value("CMUX_RELAY_ID", "cmux.relayId")
+        let brokerEndpoint: RelayEndpoint? = brokerURL.isEmpty
+            ? nil
+            : .broker(baseURL: brokerURL, relayId: relayId)
+
+        return (
+            preference,
+            TransportCandidates(
+                lan: directEndpoint,
+                lanPairingCode: value("CMUX_LAN_PAIRING_CODE", "cmux.lanPairingCode"),
+                broker: brokerEndpoint,
+                brokerPairingCode: value("CMUX_PAIRING_CODE", "cmux.pairingCode")
+            )
+        )
     }
 
     @MainActor
@@ -143,67 +215,41 @@ struct CmuxRemoteApp: App {
             guard result == .ok else { return }
         }
 
-        // Environment values beat UserDefaults so simulator smoke tests can
-        // seed either transport without mutating the app container.
-        let modeRaw = processInfo.environment["CMUX_CONNECTION_MODE"]
-            ?? UserDefaults.standard.string(forKey: "cmux.connectionMode")
-            ?? ConnectionMode.direct.rawValue
-        let connectionMode = ConnectionMode(rawValue: modeRaw) ?? .direct
-        let envHost = processInfo.environment["CMUX_HOST"] ?? ""
-        let envPort = Int(processInfo.environment["CMUX_PORT"] ?? "") ?? 0
-        let host = !envHost.isEmpty
-            ? envHost
-            : (UserDefaults.standard.string(forKey: "cmux.host") ?? "")
-        let port: Int
-        if envPort > 0 {
-            port = envPort
-        } else {
-            let defaultsPort = UserDefaults.standard.integer(forKey: "cmux.port")
-            port = defaultsPort == 0 ? 4399 : defaultsPort
+        let http = URLSessionHTTP()
+        let (preference, candidates) = Self.resolveTransportSettings(processInfo)
+        guard let selection = await TransportSelector(http: http)
+            .select(preference: preference, candidates: candidates)
+        else {
+            workspaceStore.connection = .error(L10n.string("Configure Mac host in Settings"))
+            return
         }
-        let endpoint: RelayEndpoint
-        let pairingCode: String
-        switch connectionMode {
-        case .direct:
-            endpoint = .direct(host: host, port: port)
-            pairingCode = ""
-        case .broker:
-            let brokerURL = processInfo.environment["CMUX_BROKER_URL"]
-                ?? UserDefaults.standard.string(forKey: "cmux.brokerURL")
-                ?? ""
-            let relayId = processInfo.environment["CMUX_RELAY_ID"]
-                ?? UserDefaults.standard.string(forKey: "cmux.relayId")
-                ?? ""
-            endpoint = .broker(baseURL: brokerURL, relayId: relayId)
-            pairingCode = processInfo.environment["CMUX_PAIRING_CODE"]
-                ?? UserDefaults.standard.string(forKey: "cmux.pairingCode")
-                ?? ""
-        }
-        os_log("cmux bootstrap mode=%{public}@", connectionMode.rawValue)
+        let endpoint = selection.endpoint
+        os_log("cmux bootstrap preference=%{public}@ mode=%{public}@",
+               preference.rawValue, endpoint.mode.rawValue)
 
         let auth = AuthClient(
             endpoint: endpoint,
             keychain: keychain,
-            http: URLSessionHTTP(),
-            pairingCode: pairingCode,
+            http: http,
+            pairingCode: selection.pairingCode,
             clientId: Self.clientIdentifier(),
             deviceName: UIDevice.current.name
         )
         let token: String
         let deviceId: String
         let wsURL: URL
-        os_log("cmux register start mode=%{public}@", connectionMode.rawValue)
+        os_log("cmux register start mode=%{public}@", endpoint.mode.rawValue)
         do {
             try await auth.registerIfNeeded()
             Self.clearStoredPairingCode(
-                afterSuccessfulRegistration: connectionMode,
+                afterSuccessfulRegistrationWith: endpoint,
                 defaults: .standard
             )
-            guard let storedToken = try keychain.get("bearer"),
-                  let storedDeviceId = try keychain.get("device_id")
-            else { throw AuthError.missingBearer }
-            token = storedToken
-            deviceId = storedDeviceId
+            guard let credentials = try auth.storedCredentials() else {
+                throw AuthError.missingBearer
+            }
+            token = credentials.token
+            deviceId = credentials.deviceId
             wsURL = try endpoint.webSocketURL()
             os_log("cmux register ok")
             remoteNotifications.configure(authClient: auth)
@@ -216,6 +262,7 @@ struct CmuxRemoteApp: App {
             workspaceStore.connection = .error(String(describing: error))
             return
         }
+        activeEndpointDidConnect(endpoint)
 
         let ws = WSClient(url: wsURL, headers: [
             "Sec-WebSocket-Protocol": "cmuxremote.v1",
@@ -227,6 +274,7 @@ struct CmuxRemoteApp: App {
         let liveHostStatusStore = HostStatusStore(rpc: rpc)
         await MainActor.run {
             liveWorkspaceStore.onWorkspaceAlert = { notifStore.append($0) }
+            liveWorkspaceStore.activeTransport = endpoint.activeTransport
             workspaceStore = liveWorkspaceStore
             surfaceStore = liveSurfaceStore
             hostStatusStore = liveHostStatusStore
@@ -278,6 +326,9 @@ struct CmuxRemoteApp: App {
         let liveSurfaceStore = SurfaceStore(rpc: rpc)
         let liveHostStatusStore = HostStatusStore(rpc: rpc)
         liveWorkspaceStore.onWorkspaceAlert = { notifStore.append($0) }
+        // Demo mode has no real link; showing the LAN badge would misrepresent
+        // it, so pick the transport the demo narrative implies.
+        liveWorkspaceStore.activeTransport = .broker
         workspaceStore = liveWorkspaceStore
         surfaceStore = liveSurfaceStore
         hostStatusStore = liveHostStatusStore
@@ -306,6 +357,13 @@ struct CmuxRemoteApp: App {
         }
     }
 
+    /// Re-runs transport selection when the network path changes, and reconnects
+    /// only if it now resolves to a different endpoint.
+    @MainActor
+    private func activeEndpointDidConnect(_ endpoint: RelayEndpoint) {
+        transportCoordinator.connected(to: endpoint) { reconnect() }
+    }
+
     @MainActor
     private func reconnect() {
         let rpc = activeRPC
@@ -325,6 +383,8 @@ struct CmuxRemoteApp: App {
         let rpc = activeRPC
         Task { await rpc?.close() }
         activeRPC = nil
+        transportCoordinator.disconnected()
+        transportCoordinator.stop()
         try? Keychain(service: "com.genie.cmuxremote").wipe()
         workspaceStore.reset()
         surfaceStore.reset()
@@ -337,14 +397,36 @@ struct CmuxRemoteApp: App {
         // rather than in the in-app scanner. Store the connection details and let
         // the user confirm in Settings; pairing is not started automatically.
         if let payload = try? PairingPayload(url: url) {
-            let defaults = UserDefaults.standard
-            defaults.set(ConnectionMode.broker.rawValue, forKey: "cmux.connectionMode")
-            defaults.set(payload.serverURL, forKey: "cmux.brokerURL")
-            defaults.set(payload.relayId, forKey: "cmux.relayId")
-            defaults.set(payload.pairingCode, forKey: "cmux.pairingCode")
+            Self.persist(payload, defaults: UserDefaults.standard)
             return
         }
         // cmux://surface/<id> will land with APNs/deep-link handling in M6.
+    }
+
+    /// Writes a scanned payload into settings. A payload carrying LAN details
+    /// selects `auto` so the phone takes the faster same-Wi-Fi path at home and
+    /// the broker elsewhere; a broker-only payload keeps the previous
+    /// server-only behaviour.
+    static func persist(_ payload: PairingPayload, defaults: UserDefaults) {
+        defaults.set(payload.serverURL, forKey: "cmux.brokerURL")
+        defaults.set(payload.relayId, forKey: "cmux.relayId")
+        defaults.set(payload.pairingCode, forKey: "cmux.pairingCode")
+        if payload.hasLAN,
+           let lanURL = payload.lanURL,
+           let components = URLComponents(string: lanURL),
+           let host = components.host,
+           !host.isEmpty
+        {
+            defaults.set(host, forKey: "cmux.host")
+            defaults.set(components.port ?? 4399, forKey: "cmux.port")
+            defaults.set(payload.lanPairingCode, forKey: "cmux.lanPairingCode")
+            defaults.set(TransportPreference.auto.rawValue, forKey: "cmux.transportPreference")
+        } else {
+            defaults.set(TransportPreference.broker.rawValue, forKey: "cmux.transportPreference")
+        }
+        // Keep the legacy key in step so a downgrade, or any code still reading
+        // it, does not silently fall back to a different transport.
+        defaults.set(ConnectionMode.broker.rawValue, forKey: "cmux.connectionMode")
     }
 
     @MainActor
@@ -408,13 +490,18 @@ struct CmuxRemoteApp: App {
     }
 
     static func clearStoredPairingCode(
-        afterSuccessfulRegistration mode: ConnectionMode,
+        afterSuccessfulRegistrationWith endpoint: RelayEndpoint,
         defaults: UserDefaults
     ) {
-        // The pairing code is only needed to mint the per-device bearer token.
-        // Do not retain the shared server secret after pairing succeeds.
-        guard mode == .broker else { return }
-        defaults.removeObject(forKey: "cmux.pairingCode")
+        // A pairing code is only needed to mint the per-device bearer token, and
+        // that token now lives in the Keychain under this endpoint's identity.
+        // Do not retain the shared secret afterwards — each transport has its
+        // own, so clear only the one that was just consumed.
+        guard endpoint.requiresPairingCode else { return }
+        switch endpoint.mode {
+        case .broker: defaults.removeObject(forKey: "cmux.pairingCode")
+        case .direct: defaults.removeObject(forKey: "cmux.lanPairingCode")
+        }
     }
 }
 

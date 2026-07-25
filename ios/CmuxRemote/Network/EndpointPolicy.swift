@@ -91,6 +91,40 @@ public struct RelayEndpoint: Equatable, Sendable {
         }
     }
 
+    /// True when pairing with this endpoint needs a shared code rather than the
+    /// relay's tailnet identity check. Broker endpoints always do; direct
+    /// endpoints only when the host is on the local network.
+    public var requiresPairingCode: Bool {
+        switch mode {
+        case .broker: return true
+        case .direct: return EndpointPolicy.isPrivateLANHost(host)
+        }
+    }
+
+    /// How this endpoint reaches the relay, for display on the workspace list.
+    public var activeTransport: ActiveTransport {
+        switch mode {
+        case .broker: return .broker
+        case .direct: return EndpointPolicy.isPrivateLANHost(host) ? .lan : .tailscale
+        }
+    }
+
+    /// Unauthenticated liveness endpoint, used to decide whether the LAN path is
+    /// reachable before committing to it.
+    public func healthURL() throws -> URL {
+        switch mode {
+        case .direct:
+            try validate()
+            guard let url = URL(string: "\(scheme)://\(normalizedHost):\(port)/v1/health") else {
+                throw AuthError.invalidURL
+            }
+            return url
+        case .broker:
+            try validate()
+            return try brokerComponents(webSocket: false, path: "/v1/health")
+        }
+    }
+
     public func webSocketURL() throws -> URL {
         switch mode {
         case .direct:
@@ -172,15 +206,44 @@ public struct RelayEndpoint: Equatable, Sendable {
 }
 
 public enum EndpointPolicy {
+    /// Hosts the direct transport may target.
+    ///
+    /// Two families are allowed, and they authenticate differently:
+    /// - Tailnet hosts (`*.ts.net`, `100.64.0.0/10`) pair through
+    ///   `tailscaled.whois` on the relay and need no pairing code.
+    /// - Private-LAN hosts (RFC1918, IPv4 link-local, `*.local`) pair with the
+    ///   relay's `lan.pairing_code`. This path is plain HTTP, so it is only
+    ///   appropriate on a network the user trusts — see ``requiresPairingCode``.
     public static func isAllowedRelayHost(_ host: String) -> Bool {
         let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmed.isEmpty else { return false }
         if trimmed == "localhost" || trimmed == "127.0.0.1" { return true }
         if trimmed.hasSuffix(".ts.net") { return true }
+        if isPrivateLANHost(trimmed) { return true }
         if let ipv4 = IPv4(trimmed) {
             return ipv4.octets[0] == 100 && (64...127).contains(ipv4.octets[1])
         }
         return false
+    }
+
+    /// True for hosts that reach the relay over the local network rather than
+    /// the tailnet, which is what decides whether a pairing code is required.
+    ///
+    /// `.local` names are included because that is how Bonjour advertises a
+    /// Mac's hostname; resolving one still requires the local-network
+    /// permission the app already declares.
+    public static func isPrivateLANHost(_ host: String) -> Bool {
+        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.hasSuffix(".local") { return trimmed.count > ".local".count }
+        guard let ipv4 = IPv4(trimmed) else { return false }
+        switch ipv4.octets[0] {
+        case 10: return true
+        case 172: return (16...31).contains(ipv4.octets[1])
+        case 192: return ipv4.octets[1] == 168
+        case 169: return ipv4.octets[1] == 254
+        default: return false
+        }
     }
 
     public static func isAllowedBrokerURL(_ value: String) -> Bool {

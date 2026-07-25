@@ -2,20 +2,46 @@ import XCTest
 @testable import CmuxRemote
 
 final class AuthClientTests: XCTestCase {
-    func testSuccessfulRegistrationClearsPairingCodeOnlyInBrokerMode() throws {
+    /// Convenience for asserting on the namespaced Keychain entries.
+    private func stored(
+        _ keychain: Keychain,
+        _ kind: AuthClient.CredentialKind,
+        for endpoint: RelayEndpoint
+    ) throws -> String? {
+        try keychain.get(
+            AuthClient.keychainKey(kind, identity: try endpoint.credentialIdentity())
+        )
+    }
+
+    func testSuccessfulRegistrationClearsOnlyTheConsumedPairingCode() throws {
         let suiteName = "pairing-code.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         defaults.set("pair-secret", forKey: "cmux.pairingCode")
+        defaults.set("lan-secret", forKey: "cmux.lanPairingCode")
+
+        // A tailnet host needs no code, so nothing is cleared.
         CmuxRemoteApp.clearStoredPairingCode(
-            afterSuccessfulRegistration: .direct,
+            afterSuccessfulRegistrationWith: .direct(host: "mac.tailnet.ts.net", port: 4399),
             defaults: defaults
         )
         XCTAssertEqual(defaults.string(forKey: "cmux.pairingCode"), "pair-secret")
+        XCTAssertEqual(defaults.string(forKey: "cmux.lanPairingCode"), "lan-secret")
+
+        // A LAN host consumes only the LAN code.
+        CmuxRemoteApp.clearStoredPairingCode(
+            afterSuccessfulRegistrationWith: .direct(host: "192.168.1.42", port: 4399),
+            defaults: defaults
+        )
+        XCTAssertNil(defaults.string(forKey: "cmux.lanPairingCode"))
+        XCTAssertEqual(defaults.string(forKey: "cmux.pairingCode"), "pair-secret")
 
         CmuxRemoteApp.clearStoredPairingCode(
-            afterSuccessfulRegistration: .broker,
+            afterSuccessfulRegistrationWith: .broker(
+                baseURL: "https://relay.example.com",
+                relayId: "home-mac"
+            ),
             defaults: defaults
         )
         XCTAssertNil(defaults.string(forKey: "cmux.pairingCode"))
@@ -23,18 +49,73 @@ final class AuthClientTests: XCTestCase {
 
     func testRegisterStoresBearer() async throws {
         let keychain = Keychain(service: "auth.\(UUID().uuidString)")
+        let endpoint = RelayEndpoint.direct(host: "mac.tailnet.ts.net", port: 4399)
         let mock = MockHTTPClient { request in
             XCTAssertEqual(request.url?.absoluteString, "http://mac.tailnet.ts.net:4399/v1/devices/me/register")
+            // A tailnet host pairs through whois, so no body is sent.
+            XCTAssertNil(request.httpBody)
             return (Data(#"{"device_id":"d1","token":"abc"}"#.utf8), 200)
         }
         let client = AuthClient(host: "mac.tailnet.ts.net", port: 4399, keychain: keychain, http: mock)
         try await client.registerIfNeeded()
-        XCTAssertEqual(try keychain.get("device_id"), "d1")
-        XCTAssertEqual(try keychain.get("bearer"), "abc")
-        XCTAssertEqual(
-            try keychain.get("relay_endpoint"),
-            "direct|http://mac.tailnet.ts.net:4399"
+        XCTAssertEqual(try stored(keychain, .deviceId, for: endpoint), "d1")
+        XCTAssertEqual(try stored(keychain, .bearer, for: endpoint), "abc")
+        let credentials = try XCTUnwrap(try client.storedCredentials())
+        XCTAssertEqual(credentials.token, "abc")
+        XCTAssertEqual(credentials.deviceId, "d1")
+    }
+
+    /// A private-LAN host cannot be recognised by tailscaled, so it pairs with
+    /// the relay's `lan.pairing_code` instead.
+    func testLANDirectRegisterSendsPairingBodyWithoutRelayId() async throws {
+        let keychain = Keychain(service: "auth.\(UUID().uuidString)")
+        let endpoint = RelayEndpoint.direct(host: "192.168.1.42", port: 4399)
+        let mock = MockHTTPClient { request in
+            XCTAssertEqual(
+                request.url?.absoluteString,
+                "http://192.168.1.42:4399/v1/devices/me/register"
+            )
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+            let body = try! XCTUnwrap(request.httpBody)
+            let object = try! JSONSerialization.jsonObject(with: body) as! [String: String]
+            XCTAssertEqual(object["pairing_code"], "lan-secret")
+            XCTAssertEqual(object["client_id"], "phone-client")
+            XCTAssertEqual(object["device_name"], "My iPhone")
+            XCTAssertNil(object["relay_id"])
+            return (Data(#"{"device_id":"d-lan","token":"lan-token"}"#.utf8), 200)
+        }
+        let client = AuthClient(
+            endpoint: endpoint,
+            keychain: keychain,
+            http: mock,
+            pairingCode: "lan-secret",
+            clientId: "phone-client",
+            deviceName: "My iPhone"
         )
+
+        try await client.registerIfNeeded()
+
+        XCTAssertEqual(try stored(keychain, .bearer, for: endpoint), "lan-token")
+    }
+
+    func testLANDirectRegisterRequiresPairingCodeBeforeNetwork() async throws {
+        let keychain = Keychain(service: "auth.\(UUID().uuidString)")
+        let mock = MockHTTPClient { _ in
+            XCTFail("network should not be hit")
+            return (Data(), 500)
+        }
+        let client = AuthClient(
+            endpoint: .direct(host: "192.168.1.42", port: 4399),
+            keychain: keychain,
+            http: mock,
+            clientId: "phone-client",
+            deviceName: "My iPhone"
+        )
+
+        do {
+            try await client.registerIfNeeded()
+            XCTFail("expected missingPairingCode")
+        } catch AuthError.missingPairingCode {}
     }
 
     func testBrokerRegisterSendsPairingPayloadAndStoresScopedCredentials() async throws {
@@ -68,12 +149,114 @@ final class AuthClientTests: XCTestCase {
 
         try await client.registerIfNeeded()
 
-        XCTAssertEqual(try keychain.get("device_id"), "d-server")
-        XCTAssertEqual(try keychain.get("bearer"), "server-token")
-        XCTAssertEqual(
-            try keychain.get("relay_endpoint"),
-            "broker|https://relay.example.com/cmux|home-mac"
+        XCTAssertEqual(try stored(keychain, .deviceId, for: endpoint), "d-server")
+        XCTAssertEqual(try stored(keychain, .bearer, for: endpoint), "server-token")
+    }
+
+    /// The whole point of namespacing: a phone that alternates between the LAN
+    /// relay and the broker must keep both bearers, because the two mint tokens
+    /// from separate device stores and the broker's pairing code is consumed on
+    /// first use.
+    func testLANAndBrokerCredentialsCoexist() async throws {
+        let keychain = Keychain(service: "auth.\(UUID().uuidString)")
+        let lan = RelayEndpoint.direct(host: "192.168.1.42", port: 4399)
+        let broker = RelayEndpoint.broker(baseURL: "https://relay.example.com", relayId: "home-mac")
+
+        let lanClient = AuthClient(
+            endpoint: lan,
+            keychain: keychain,
+            http: MockHTTPClient { _ in (Data(#"{"device_id":"d-lan","token":"lan-token"}"#.utf8), 200) },
+            pairingCode: "lan-secret",
+            clientId: "phone-client",
+            deviceName: "My iPhone"
         )
+        try await lanClient.registerIfNeeded()
+
+        let brokerClient = AuthClient(
+            endpoint: broker,
+            keychain: keychain,
+            http: MockHTTPClient { _ in (Data(#"{"device_id":"d-br","token":"br-token"}"#.utf8), 200) },
+            pairingCode: "pair-secret",
+            clientId: "phone-client",
+            deviceName: "My iPhone"
+        )
+        try await brokerClient.registerIfNeeded()
+
+        XCTAssertEqual(try stored(keychain, .bearer, for: lan), "lan-token")
+        XCTAssertEqual(try stored(keychain, .bearer, for: broker), "br-token")
+
+        // Reconnecting to the LAN endpoint must not need the network again.
+        let hits = LockBox(0)
+        let again = AuthClient(
+            endpoint: lan,
+            keychain: keychain,
+            http: MockHTTPClient { _ in
+                hits.withValue { $0 += 1 }
+                return (Data(), 200)
+            },
+            pairingCode: "",
+            clientId: "phone-client",
+            deviceName: "My iPhone"
+        )
+        try await again.registerIfNeeded()
+        XCTAssertEqual(hits.withValue { $0 }, 0)
+    }
+
+    /// Upgrading from a build that stored one flat `bearer` must not silently
+    /// re-pair — for the broker that would be fatal, since the pairing code has
+    /// already been cleared.
+    func testMigratesLegacyFlatCredentials() async throws {
+        let keychain = Keychain(service: "auth.\(UUID().uuidString)")
+        let endpoint = RelayEndpoint.broker(baseURL: "https://relay.example.com", relayId: "home-mac")
+        try keychain.set("legacy-device", for: "device_id")
+        try keychain.set("legacy-token", for: "bearer")
+        try keychain.set(try endpoint.credentialIdentity(), for: "relay_endpoint")
+
+        let hits = LockBox(0)
+        let client = AuthClient(
+            endpoint: endpoint,
+            keychain: keychain,
+            http: MockHTTPClient { _ in
+                hits.withValue { $0 += 1 }
+                return (Data(), 500)
+            },
+            pairingCode: "",
+            clientId: "phone-client",
+            deviceName: "My iPhone"
+        )
+
+        try await client.registerIfNeeded()
+
+        XCTAssertEqual(hits.withValue { $0 }, 0)
+        XCTAssertEqual(try stored(keychain, .bearer, for: endpoint), "legacy-token")
+        XCTAssertEqual(try stored(keychain, .deviceId, for: endpoint), "legacy-device")
+        XCTAssertNil(try keychain.get("bearer"))
+        XCTAssertNil(try keychain.get("relay_endpoint"))
+    }
+
+    /// Legacy credentials belonging to a different endpoint must not be adopted.
+    func testDoesNotMigrateLegacyCredentialsFromAnotherEndpoint() async throws {
+        let keychain = Keychain(service: "auth.\(UUID().uuidString)")
+        let other = RelayEndpoint.broker(baseURL: "https://old.example.com", relayId: "old-mac")
+        try keychain.set("legacy-device", for: "device_id")
+        try keychain.set("legacy-token", for: "bearer")
+        try keychain.set(try other.credentialIdentity(), for: "relay_endpoint")
+
+        let endpoint = RelayEndpoint.broker(baseURL: "https://relay.example.com", relayId: "home-mac")
+        let client = AuthClient(
+            endpoint: endpoint,
+            keychain: keychain,
+            http: MockHTTPClient { _ in
+                (Data(#"{"device_id":"fresh","token":"fresh-token"}"#.utf8), 200)
+            },
+            pairingCode: "pair-secret",
+            clientId: "phone-client",
+            deviceName: "My iPhone"
+        )
+
+        try await client.registerIfNeeded()
+
+        XCTAssertEqual(try stored(keychain, .bearer, for: endpoint), "fresh-token")
     }
 
     func testBrokerRegisterRequiresPairingCodeBeforeNetwork() async throws {
@@ -119,9 +302,10 @@ final class AuthClientTests: XCTestCase {
 
     func testNoOpWhenAlreadyRegistered() async throws {
         let keychain = Keychain(service: "auth.\(UUID().uuidString)")
-        try keychain.set("d1", for: "device_id")
-        try keychain.set("abc", for: "bearer")
-        try keychain.set("x.ts.net", for: "relay_host")
+        let endpoint = RelayEndpoint.direct(host: "x.ts.net", port: 4399)
+        let identity = try endpoint.credentialIdentity()
+        try keychain.set("d1", for: AuthClient.keychainKey(.deviceId, identity: identity))
+        try keychain.set("abc", for: AuthClient.keychainKey(.bearer, identity: identity))
         let hitCount = LockBox(0)
         let mock = MockHTTPClient { _ in
             hitCount.withValue { $0 += 1 }
@@ -132,10 +316,8 @@ final class AuthClientTests: XCTestCase {
         XCTAssertEqual(hitCount.withValue { $0 }, 0)
     }
 
-    func testRejectsNonTailscaleHostBeforeSendingBearer() async throws {
+    func testRejectsPublicHostBeforeSendingBearer() async throws {
         let keychain = Keychain(service: "auth.\(UUID().uuidString)")
-        try keychain.set("d1", for: "device_id")
-        try keychain.set("abc", for: "bearer")
         let mock = MockHTTPClient { _ in XCTFail("network should not be hit"); return (Data(), 500) }
         let client = AuthClient(host: "example.com", port: 4399, keychain: keychain, http: mock)
         do {
@@ -144,26 +326,32 @@ final class AuthClientTests: XCTestCase {
         } catch AuthError.disallowedHost {}
     }
 
-    func testHostChangeClearsAndReRegisters() async throws {
+    /// Switching hosts now registers the new one without disturbing the old
+    /// entry, so returning to the previous host does not have to re-pair.
+    func testHostChangeRegistersSeparatelyAndKeepsBoth() async throws {
         let keychain = Keychain(service: "auth.\(UUID().uuidString)")
-        try keychain.set("old", for: "device_id")
-        try keychain.set("old-token", for: "bearer")
-        try keychain.set("old.ts.net", for: "relay_host")
+        let old = RelayEndpoint.direct(host: "old.ts.net", port: 4399)
+        let oldIdentity = try old.credentialIdentity()
+        try keychain.set("old", for: AuthClient.keychainKey(.deviceId, identity: oldIdentity))
+        try keychain.set("old-token", for: AuthClient.keychainKey(.bearer, identity: oldIdentity))
+
         let mock = MockHTTPClient { _ in
             (Data(#"{"device_id":"new","token":"new-token"}"#.utf8), 200)
         }
         let client = AuthClient(host: "new.ts.net", port: 4399, keychain: keychain, http: mock)
         try await client.registerIfNeeded()
-        XCTAssertEqual(try keychain.get("device_id"), "new")
-        XCTAssertEqual(try keychain.get("bearer"), "new-token")
-        XCTAssertEqual(try keychain.get("relay_host"), "new.ts.net")
+
+        let new = RelayEndpoint.direct(host: "new.ts.net", port: 4399)
+        XCTAssertEqual(try stored(keychain, .bearer, for: new), "new-token")
+        XCTAssertEqual(try stored(keychain, .bearer, for: old), "old-token")
     }
 
     func testRegisterAPNsTokenPostsBearerAndPayload() async throws {
         let keychain = Keychain(service: "auth.\(UUID().uuidString)")
-        try keychain.set("d1", for: "device_id")
-        try keychain.set("abc", for: "bearer")
-        try keychain.set("mac.tailnet.ts.net", for: "relay_host")
+        let endpoint = RelayEndpoint.direct(host: "mac.tailnet.ts.net", port: 4399)
+        let identity = try endpoint.credentialIdentity()
+        try keychain.set("d1", for: AuthClient.keychainKey(.deviceId, identity: identity))
+        try keychain.set("abc", for: AuthClient.keychainKey(.bearer, identity: identity))
         let mock = MockHTTPClient { request in
             XCTAssertEqual(request.url?.absoluteString, "http://mac.tailnet.ts.net:4399/v1/devices/me/apns")
             XCTAssertEqual(request.httpMethod, "POST")
@@ -193,7 +381,6 @@ final class AuthClientTests: XCTestCase {
 
     func testRegisterAPNsTokenRejectsDisallowedHostBeforeNetwork() async throws {
         let keychain = Keychain(service: "auth.\(UUID().uuidString)")
-        try keychain.set("abc", for: "bearer")
         let mock = MockHTTPClient { _ in XCTFail("network should not be hit"); return (Data(), 500) }
         let client = AuthClient(host: "example.com", port: 4399, keychain: keychain, http: mock)
 
@@ -209,9 +396,9 @@ final class AuthClientTests: XCTestCase {
             baseURL: "https://relay.example.com",
             relayId: "home-mac"
         )
-        try keychain.set("d1", for: "device_id")
-        try keychain.set("abc", for: "bearer")
-        try keychain.set(try endpoint.credentialIdentity(), for: "relay_endpoint")
+        let identity = try endpoint.credentialIdentity()
+        try keychain.set("d1", for: AuthClient.keychainKey(.deviceId, identity: identity))
+        try keychain.set("abc", for: AuthClient.keychainKey(.bearer, identity: identity))
         let mock = MockHTTPClient { request in
             XCTAssertEqual(
                 request.url?.absoluteString,

@@ -136,11 +136,64 @@ final class StoresTests: XCTestCase {
         XCTAssertTrue(alerts.first?.id.contains("workspace-alert") ?? false)
     }
 
-    func testEndpointPolicyAllowsOnlyTailscaleScopedHosts() {
+    func testEndpointPolicyAllowsTailnetAndPrivateLANHosts() {
         XCTAssertTrue(EndpointPolicy.isAllowedRelayHost("mac.tailnet.ts.net"))
         XCTAssertTrue(EndpointPolicy.isAllowedRelayHost("100.115.102.6"))
+        XCTAssertTrue(EndpointPolicy.isAllowedRelayHost("192.168.1.5"))
+        XCTAssertTrue(EndpointPolicy.isAllowedRelayHost("10.0.0.9"))
+        XCTAssertTrue(EndpointPolicy.isAllowedRelayHost("172.16.4.2"))
+        XCTAssertTrue(EndpointPolicy.isAllowedRelayHost("mac.local"))
         XCTAssertFalse(EndpointPolicy.isAllowedRelayHost("example.com"))
-        XCTAssertFalse(EndpointPolicy.isAllowedRelayHost("192.168.1.5"))
+        XCTAssertFalse(EndpointPolicy.isAllowedRelayHost("8.8.8.8"))
+        XCTAssertFalse(EndpointPolicy.isAllowedRelayHost("172.32.0.1"))
+    }
+
+    /// Only LAN hosts need a pairing code; a tailnet host proves identity to the
+    /// relay through Tailscale itself.
+    func testPrivateLANHostClassification() {
+        XCTAssertTrue(EndpointPolicy.isPrivateLANHost("192.168.1.5"))
+        XCTAssertTrue(EndpointPolicy.isPrivateLANHost("169.254.3.4"))
+        XCTAssertTrue(EndpointPolicy.isPrivateLANHost("MAC.LOCAL"))
+        XCTAssertFalse(EndpointPolicy.isPrivateLANHost(".local"))
+        XCTAssertFalse(EndpointPolicy.isPrivateLANHost("mac.tailnet.ts.net"))
+        XCTAssertFalse(EndpointPolicy.isPrivateLANHost("100.115.102.6"))
+        XCTAssertFalse(EndpointPolicy.isPrivateLANHost("127.0.0.1"))
+        XCTAssertFalse(EndpointPolicy.isPrivateLANHost(""))
+    }
+
+    func testRequiresPairingCodeOnlyForLANAndBroker() {
+        XCTAssertFalse(RelayEndpoint.direct(host: "mac.tailnet.ts.net", port: 4399).requiresPairingCode)
+        XCTAssertTrue(RelayEndpoint.direct(host: "192.168.1.5", port: 4399).requiresPairingCode)
+        XCTAssertTrue(
+            RelayEndpoint.broker(baseURL: "https://relay.example.com", relayId: "m").requiresPairingCode
+        )
+    }
+
+    /// The workspace list badge is driven by this mapping, and the plaintext flag
+    /// is what marks the LAN path as unencrypted.
+    func testActiveTransportMapping() {
+        XCTAssertEqual(RelayEndpoint.direct(host: "192.168.1.5", port: 4399).activeTransport, .lan)
+        XCTAssertEqual(RelayEndpoint.direct(host: "mac.local", port: 4399).activeTransport, .lan)
+        XCTAssertEqual(
+            RelayEndpoint.direct(host: "mac.tailnet.ts.net", port: 4399).activeTransport,
+            .tailscale
+        )
+        XCTAssertEqual(RelayEndpoint.direct(host: "100.115.102.6", port: 4399).activeTransport, .tailscale)
+        XCTAssertEqual(
+            RelayEndpoint.broker(baseURL: "https://relay.example.com", relayId: "m").activeTransport,
+            .broker
+        )
+
+        XCTAssertTrue(ActiveTransport.lan.isPlaintext)
+        XCTAssertFalse(ActiveTransport.tailscale.isPlaintext)
+        XCTAssertFalse(ActiveTransport.broker.isPlaintext)
+    }
+
+    func testResetClearsActiveTransport() async {
+        let store = WorkspaceStore(rpc: OfflineRPCDispatch())
+        store.activeTransport = .lan
+        store.reset()
+        XCTAssertNil(store.activeTransport)
     }
 
     func testEndpointPolicyRequiresTLSForPublicBroker() {

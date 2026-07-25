@@ -176,6 +176,7 @@ struct WorkspaceListView: View {
                 Text(connectionSubtitle)
                     .cmuxMono(11)
                     .foregroundStyle(CmuxTheme.muted)
+                transportBadge
             }
         }
     }
@@ -263,6 +264,37 @@ struct WorkspaceListView: View {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return store.workspaces }
         return store.workspaces.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    /// Shows which path the connection took. Only meaningful once connected, so
+    /// it stays hidden while connecting or offline rather than reporting a
+    /// transport that is not carrying anything.
+    @ViewBuilder
+    private var transportBadge: some View {
+        if let transport = store.activeTransport, store.connection == .connected {
+            HStack(spacing: 3) {
+                Image(systemName: transport.isPlaintext ? "lock.open" : "lock")
+                    .font(.system(size: 8, weight: .bold))
+                Text(transport.shortLabel)
+                    .cmuxMono(10)
+            }
+            .foregroundStyle(transport.isPlaintext ? CmuxTheme.accentYellow : CmuxTheme.muted)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(CmuxTheme.surfaceSunken)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .strokeBorder(
+                        transport.isPlaintext ? CmuxTheme.accentYellow.opacity(0.35) : CmuxTheme.divider,
+                        lineWidth: 1
+                    )
+            )
+            .accessibilityIdentifier("TransportBadge")
+            .accessibilityLabel(transport.accessibilityDescription)
+        }
     }
 
     private var connectionSubtitle: String {

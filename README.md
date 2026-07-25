@@ -1,4 +1,4 @@
-🇰🇷 한국어 · [🇺🇸 English](README.en.md)
+🇰🇷 한국어 · [🇺🇸 English](README.en.md) · [🇨🇳 简体中文](README.zh-CN.md)
 
 # cmux Remote
 

@@ -6,6 +6,11 @@ import SharedKit
 @Observable
 public final class WorkspaceStore {
     public var workspaces: [Workspace] = []
+    public var windows: [CmuxWindow] = []
+    /// The window whose workspaces are currently listed. `nil` means "whatever
+    /// cmux considers the key window", which is also the pre-window-support
+    /// behaviour.
+    public var selectedWindowId: String?
     public var selectedId: String?
     public var surfacesByWorkspaceId: [String: [Surface]] = [:]
     public var connection: ConnectionState = .disconnected
@@ -21,7 +26,11 @@ public final class WorkspaceStore {
     public func refresh() async {
         connection = .connecting
         do {
-            let response = try await rpc.call(method: "workspace.list", params: .object([:]))
+            await refreshWindows()
+            let response = try await rpc.call(
+                method: "workspace.list",
+                params: .object(workspaceListParams())
+            )
             let payload = try response.unwrapResult().decode(WorkspaceListPayload.self)
             let loaded = payload.workspaces.map(\.model).sorted { $0.index < $1.index }
             workspaces = loaded
@@ -36,6 +45,52 @@ public final class WorkspaceStore {
         } catch {
             connection = .error(String(describing: error))
         }
+    }
+
+    /// Enumerates cmux windows so the UI can scope the workspace list.
+    ///
+    /// A failure here is not fatal: older cmux builds may not implement
+    /// `window.list`, and in that case the app keeps working exactly as before
+    /// against the key window.
+    private func refreshWindows() async {
+        do {
+            let response = try await rpc.call(method: "window.list", params: .object([:]))
+            let payload = try response.unwrapResult().decode(WindowListPayload.self)
+            windows = payload.windows.map(\.model).sorted { $0.index < $1.index }
+        } catch {
+            windows = []
+        }
+        guard !windows.isEmpty else {
+            selectedWindowId = nil
+            return
+        }
+        if let selectedWindowId, windows.contains(where: { $0.id == selectedWindowId }) {
+            return
+        }
+        // Default to cmux's key window so the first load matches what the user
+        // sees on the Mac.
+        selectedWindowId = (windows.first(where: \.isKey) ?? windows[0]).id
+    }
+
+    /// Switches the listed window and reloads. Workspace selection is dropped
+    /// because workspace ids belong to the window that owns them.
+    public func selectWindow(id: String) async {
+        guard selectedWindowId != id else { return }
+        selectedWindowId = id
+        selectedId = nil
+        workspaces = []
+        surfacesByWorkspaceId = [:]
+        await refresh()
+    }
+
+    private func workspaceListParams() -> [String: JSONValue] {
+        guard let selectedWindowId else { return [:] }
+        return ["window_id": .string(selectedWindowId)]
+    }
+
+    public var selectedWindow: CmuxWindow? {
+        guard let selectedWindowId else { return nil }
+        return windows.first { $0.id == selectedWindowId }
     }
 
     public func refreshSurfaces(workspaceId: String) async {
@@ -60,7 +115,11 @@ public final class WorkspaceStore {
     }
 
     public func create(name: String) async throws {
-        _ = try await rpc.call(method: "workspace.create", params: .object(["title": .string(name)])).requireOk()
+        // Without `window_id` cmux creates the workspace in its key window,
+        // which is not necessarily the window being browsed here.
+        var params: [String: JSONValue] = ["title": .string(name)]
+        if let selectedWindowId { params["window_id"] = .string(selectedWindowId) }
+        _ = try await rpc.call(method: "workspace.create", params: .object(params)).requireOk()
         await refresh()
     }
 
@@ -117,6 +176,8 @@ public final class WorkspaceStore {
 
     public func reset() {
         workspaces = []
+        windows = []
+        selectedWindowId = nil
         selectedId = nil
         surfacesByWorkspaceId = [:]
         connection = .disconnected

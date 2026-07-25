@@ -25,6 +25,7 @@ struct WorkspaceListView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
+                    windowSwitcher
                     searchBar
 
                     VStack(alignment: .leading, spacing: 10) {
@@ -177,6 +178,64 @@ struct WorkspaceListView: View {
                     .foregroundStyle(CmuxTheme.muted)
             }
         }
+    }
+
+    /// Only shown when cmux actually reports more than one window. With a
+    /// single window this row would be pure noise, and older cmux builds that
+    /// lack `window.list` report none at all.
+    @ViewBuilder
+    private var windowSwitcher: some View {
+        if store.windows.count > 1 {
+            VStack(alignment: .leading, spacing: 10) {
+                CmuxRule(title: L10n.string("windows"))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(store.windows) { window in
+                            windowChip(window)
+                        }
+                    }
+                }
+            }
+            .accessibilityIdentifier("WindowSwitcher")
+        }
+    }
+
+    private func windowChip(_ window: CmuxWindow) -> some View {
+        let selected = store.selectedWindowId == window.id
+        return Button {
+            guard !selected else { return }
+            Task { await store.selectWindow(id: window.id) }
+        } label: {
+            HStack(spacing: 6) {
+                Text(windowLabel(window))
+                    .cmuxDisplay(11)
+                Text("\(window.workspaceCount)")
+                    .cmuxMono(10)
+                    .foregroundStyle(selected ? CmuxTheme.canvas.opacity(0.75) : CmuxTheme.muted)
+            }
+            .foregroundStyle(selected ? CmuxTheme.canvas : CmuxTheme.ink)
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(selected ? CmuxTheme.accentGreen : CmuxTheme.surfaceSunken)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(selected ? Color.clear : CmuxTheme.divider, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("WindowChip-\(window.ref)")
+        .accessibilityLabel(L10n.format("%@, %lld workspaces", windowLabel(window), Int64(window.workspaceCount)))
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    /// cmux windows have no user-assigned name, so `window:N` plus a marker for
+    /// the frontmost one is the most recognisable label available.
+    private func windowLabel(_ window: CmuxWindow) -> String {
+        let base = window.ref.hasPrefix("window:")
+            ? L10n.format("win %@", String(window.ref.dropFirst("window:".count)))
+            : window.ref
+        return window.isKey ? "\(base) \u{25CF}" : base
     }
 
     private var searchBar: some View {

@@ -30,6 +30,29 @@ struct WorkspaceListPayload: Decodable {
     let workspaces: [WorkspacePayload]
 }
 
+struct WindowListPayload: Decodable {
+    let windows: [WindowPayload]
+}
+
+struct WindowPayload: Decodable {
+    let id: String
+    let ref: String?
+    let index: Int?
+    let workspaceCount: Int?
+    /// cmux names this `key` (as in key window), not `is_key`.
+    let key: Bool?
+
+    var model: CmuxWindow {
+        CmuxWindow(
+            id: id,
+            ref: ref ?? id,
+            index: index ?? 0,
+            workspaceCount: workspaceCount ?? 0,
+            isKey: key ?? false
+        )
+    }
+}
+
 struct SurfaceListPayload: Decodable {
     let surfaces: [SurfacePayload]
 }

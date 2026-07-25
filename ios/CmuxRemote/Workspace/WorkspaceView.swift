@@ -346,7 +346,7 @@ struct WorkspaceView: View {
                             .accessibilityLabel(L10n.string("Live terminal input"))
 
                             if liveInputEcho.isEmpty {
-                                Text(L10n.string("입력하면 바로 전송됩니다…"))
+                                Text(L10n.string("Type to send immediately…"))
                                     .cmuxMono(14)
                                     .foregroundStyle(CmuxTheme.muted)
                                     .lineLimit(1)

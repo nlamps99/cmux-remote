@@ -249,7 +249,7 @@ struct SettingsView: View {
     private var demoSettings: some View {
         section(title: "demo mode") {
             VStack(alignment: .leading, spacing: CmuxSpacing.md) {
-                Text(L10n.string("Mac이나 Tailscale 없이 앱을 둘러볼 수 있어요. 가짜 워크스페이스 / 터미널 / 알림이 채워집니다. App Review 평가 경로이기도 합니다."))
+                Text(L10n.string("Explore the app without a Mac or Tailscale. It fills the app with demo workspaces, terminals, and notifications."))
                     .cmuxCaption().foregroundStyle(CmuxTheme.muted).fixedSize(horizontal: false, vertical: true)
                 Button(action: { demoMode.toggle(); onReconnect() }) {
                     HStack(spacing: CmuxSpacing.sm) {
@@ -278,7 +278,7 @@ struct SettingsView: View {
                 .buttonStyle(CmuxOutlineButtonStyle())
 
                 if onTriggerTestNotification != nil {
-                    Text(L10n.string("로컬 인젝션은 cmux 응답과 무관하게 Inbox + iOS 배너를 즉시 검증합니다. 라운드트립 라인은 relay → cmux → events.stream 경로 살아있는지 별도로 표시."))
+                    Text(L10n.string("Local injection immediately verifies the Inbox and iOS banner. The round-trip status separately verifies relay → cmux → events.stream."))
                         .cmuxCaption().foregroundStyle(CmuxTheme.muted).fixedSize(horizontal: false, vertical: true)
                     Button(action: triggerTestNotification) {
                         HStack(spacing: CmuxSpacing.sm) {
@@ -516,28 +516,28 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: CmuxSpacing.md) {
                 if connectionMode == .direct {
                     GuideStep(number: 1,
-                              title: "Mac에서 cmux와 Tailscale을 켭니다.",
-                              detail: "iPhone과 Mac이 같은 tailnet에 있어야 합니다.")
+                              title: "Turn on cmux and Tailscale on your Mac.",
+                              detail: "Your iPhone and Mac must be on the same tailnet.")
                     GuideStep(number: 2,
-                              title: "Mac 터미널에서 릴레이를 실행합니다.",
+                              title: "Run the relay in Terminal on your Mac.",
                               detail: "swift run cmux-relay serve --config ~/.cmuxremote/relay.json")
                     GuideStep(number: 3,
-                              title: "Tailscale host와 port를 입력합니다.",
-                              detail: "host는 100.x IP나 tailnet DNS, port는 보통 4399.")
+                              title: "Enter the Tailscale host and port.",
+                              detail: "Use a 100.x IP or tailnet DNS; the port is usually 4399.")
                 } else {
                     GuideStep(number: 1,
-                              title: "VPS에서 Broker와 HTTPS를 실행합니다.",
-                              detail: "broker/docker-compose.yml은 Caddy TLS를 함께 시작합니다.")
+                              title: "Run the Broker and HTTPS on your VPS.",
+                              detail: "broker/docker-compose.yml starts Caddy TLS too.")
                     GuideStep(number: 2,
-                              title: "Mac relay.json을 broker 모드로 설정합니다.",
-                              detail: "서버와 같은 relay_id / relay_token을 사용합니다.")
+                              title: "Set the Mac relay.json to Broker mode.",
+                              detail: "Use the same relay_id / relay_token as the server.")
                     GuideStep(number: 3,
-                              title: "Server URL, Relay ID, Pairing Code를 입력합니다.",
-                              detail: "공개 서버 주소는 https:// 로 시작해야 합니다.")
+                              title: "Enter the Server URL, Relay ID, and Pairing Code.",
+                              detail: "A public server URL must start with https://.")
                 }
                 GuideStep(number: 4,
-                          title: "저장 후 연결 다시 시도를 누릅니다.",
-                          detail: "Workspaces가 보이면 연결이 완료된 상태입니다.")
+                          title: "Save, then tap reconnect.",
+                          detail: "The connection is ready when workspaces appear.")
             }
         }
         .cmuxSurface()
@@ -678,7 +678,7 @@ private enum TestNotificationStatus: Equatable {
         switch self {
         case .idle: return nil
         case .sending: return L10n.string("sending…")
-        case .sent: return L10n.string("sent — Inbox에 곧 도착합니다.")
+        case .sent: return L10n.string("sent — it will appear in Inbox shortly.")
         case .failed(let message): return L10n.format("failed: %@", message)
         }
     }

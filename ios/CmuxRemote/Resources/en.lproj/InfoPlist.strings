@@ -1,1 +1,2 @@
 "NSLocalNetworkUsageDescription" = "Local network access is needed to connect to the cmux relay running on your Mac and remotely control workspaces and terminals.";
+"NSCameraUsageDescription" = "Camera access is used only to scan the pairing QR code shown by cmux-relay on your Mac, so you do not have to type the server URL and pairing code by hand.";

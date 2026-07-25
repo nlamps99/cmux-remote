@@ -357,9 +357,9 @@ struct CmuxRemoteApp: App {
             id: id,
             workspaceId: workspaceId,
             surfaceId: nil,
-            title: L10n.string("cmux 테스트 알림"),
+            title: L10n.string("cmux test notification"),
             subtitle: L10n.string("Settings → SEND TEST NOTIFICATION"),
-            body: L10n.string("Inbox에 쌓이고 백그라운드면 iOS 배너가 떠야 합니다."),
+            body: L10n.string("It appears in Inbox and should show an iOS banner in the background."),
             ts: Int64(Date().timeIntervalSince1970),
             threadId: "workspace-\(workspaceId)"
         )

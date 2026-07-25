@@ -1,1 +1,2 @@
 "NSLocalNetworkUsageDescription" = "需要访问本地网络，才能连接运行在 Mac 上的 cmux relay 并远程控制工作区和终端。";
+"NSCameraUsageDescription" = "仅用于扫描 Mac 上 cmux-relay 显示的配对二维码，这样你就不必手动输入服务器地址和配对码。";

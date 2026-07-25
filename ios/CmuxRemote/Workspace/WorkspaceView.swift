@@ -45,7 +45,15 @@ struct WorkspaceView: View {
             // Keep the composer just above the actual keyboard frame.  SwiftUI's
             // automatic keyboard avoidance is disabled below so the terminal and
             // its overlay always use this one, window-relative measurement.
-            let bottomObstruction = keyboardVisible ? keyboardHeight : proxy.safeAreaInsets.bottom
+            //
+            // `keyboardHeight` is the keyboard's overlap with the window, which
+            // already includes the bottom safe-area (home indicator).  The
+            // composer VStack only ignores the `.keyboard` safe area, so it still
+            // sits above the container safe area.  Subtract that inset so we don't
+            // double-count it and shove the bar too high above the keyboard.
+            let bottomObstruction = keyboardVisible
+                ? max(0, keyboardHeight - proxy.safeAreaInsets.bottom)
+                : 0
             let accessoryBottomPadding = bottomObstruction + 12
             let terminalBottomInset = accessoryHeight + accessoryBottomPadding + 10
             let terminalTopInset = keyboardControlsActive

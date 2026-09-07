@@ -1,9 +1,28 @@
 import XCTest
 import UserNotifications
+import SharedKit
 @testable import CmuxRemote
 
 @MainActor
 final class LocalNotificationPresenterTests: XCTestCase {
+    func testNotificationsWithSameIDOnDifferentRelaysStayDistinct() async {
+        let center = FakeNotificationCenter()
+        center.status = .authorized
+        let delivered = expectation(description: "Both notifications delivered")
+        delivered.expectedFulfillmentCount = 2
+        center.onAdd = { delivered.fulfill() }
+        let presenter = LocalNotificationPresenter(notificationCenter: center)
+        let record = NotificationRecord(id: "same-id", workspaceId: "same-workspace", surfaceId: nil,
+                                        title: "Needs input", subtitle: nil, body: "", ts: 1, threadId: "same-thread")
+        presenter.present(record, relayEndpoint: "http://office.ts.net:4399")
+        presenter.present(record, relayEndpoint: "http://home.ts.net:4399")
+        await fulfillment(of: [delivered], timeout: 2)
+        XCTAssertEqual(Set(center.addedRequests.map(\.identifier)).count, 2)
+        XCTAssertEqual(Set(center.addedRequests.map { $0.content.threadIdentifier }).count, 2)
+        XCTAssertEqual(Set(center.addedRequests.compactMap { $0.content.userInfo["relay_endpoint"] as? String }),
+                       ["http://office.ts.net:4399", "http://home.ts.net:4399"])
+    }
+
     func testConcurrentAuthorizationCallsShareInFlightPromptResult() async {
         let notificationCenter = FakeNotificationCenter()
         let presenter = LocalNotificationPresenter(notificationCenter: notificationCenter)
@@ -32,6 +51,7 @@ private final class FakeNotificationCenter: NotificationCenterFacade {
     private var requestStartedContinuation: CheckedContinuation<Void, Never>?
     private var authorizationContinuation: CheckedContinuation<Bool, Never>?
     private(set) var addedRequests: [UNNotificationRequest] = []
+    var onAdd: (() -> Void)?
 
     func authorizationStatus() async -> UNAuthorizationStatus {
         status
@@ -48,6 +68,7 @@ private final class FakeNotificationCenter: NotificationCenterFacade {
 
     func add(_ request: UNNotificationRequest) async throws {
         addedRequests.append(request)
+        onAdd?()
     }
 
     func waitUntilRequestStarted() async {

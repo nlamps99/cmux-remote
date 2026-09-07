@@ -3,6 +3,7 @@ import UIKit
 import SharedKit
 
 struct ContentView: View {
+    @AppStorage("cmux.demoMode") private var demoMode = false
     @State private var selectedTab: AppTab = .workspaces
     @State private var requestedSurfaceId: String?
 
@@ -10,6 +11,8 @@ struct ContentView: View {
     let surfaceStore: SurfaceStore
     let notifStore: NotificationStore
     let hostStatusStore: HostStatusStore
+    let computers: ComputerStore
+    let connectionID: UUID
     let onDisconnect: () -> Void
     let onReconnect: () -> Void
     let onTriggerTestNotification: @MainActor () -> TestNotificationResult
@@ -39,10 +42,17 @@ struct ContentView: View {
                     }
             }
         }
+        .onChange(of: connectionID) { _, _ in
+            requestedSurfaceId = nil
+            if selectedTab == .active { selectedTab = .workspaces }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .cmuxRemoteNotificationResponse)) { notification in
             openNotificationUserInfo(notification.userInfo)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if selectedTab != .active { computerSwitcher }
+        }
         .background(CmuxTheme.canvas.ignoresSafeArea())
     }
 
@@ -61,7 +71,8 @@ struct ContentView: View {
                 notifStore: notifStore,
                 hostStatusStore: hostStatusStore,
                 preferredSurfaceId: $requestedSurfaceId,
-                onBack: { selectedTab = .workspaces }
+                onBack: { selectedTab = .workspaces },
+                computerName: demoMode ? L10n.string("Demo") : computers.selected?.name
             )
         case .inbox:
             NotificationCenterView(store: notifStore) { notification in
@@ -70,6 +81,7 @@ struct ContentView: View {
         case .settings:
             SettingsView(
                 store: workspaceStore,
+                computers: computers,
                 onDisconnect: onDisconnect,
                 onReconnect: onReconnect,
                 onTerminalPreferencesChanged: {
@@ -92,6 +104,12 @@ struct ContentView: View {
     }
 
     private func openNotificationUserInfo(_ userInfo: [AnyHashable: Any]?) {
+        guard let source = userInfo?["relay_endpoint"] as? String,
+              source == computers.selectedID?.uuidString else {
+            requestedSurfaceId = nil
+            selectedTab = .inbox
+            return
+        }
         guard let workspaceId = userInfo?["workspace_id"] as? String, !workspaceId.isEmpty else {
             selectedTab = .inbox
             return
@@ -107,6 +125,38 @@ struct ContentView: View {
             requestedSurfaceId = nil
             selectedTab = .inbox
         }
+    }
+
+    private var computerSwitcher: some View {
+        HStack {
+            Menu {
+                ForEach(computers.computers) { computer in
+                    Button {
+                        computers.select(computer.id)
+                        demoMode = false
+                        onReconnect()
+                    } label: {
+                        Label(computer.name, systemImage: computer.id == computers.selectedID ? "checkmark" : "desktopcomputer")
+                    }
+                }
+                Divider()
+                Button(L10n.string("Manage Computers"), systemImage: "gearshape") { selectedTab = .settings }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "desktopcomputer")
+                    Text(demoMode ? L10n.string("Demo") : (computers.selected?.name ?? L10n.string("No computer")))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down").font(.system(size: 10))
+                }
+                .cmuxCallout()
+                .foregroundStyle(CmuxTheme.ink)
+                .frame(minHeight: 44)
+            }
+            .accessibilityIdentifier("ComputerSwitcher")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, CmuxSpacing.screen)
+        .background(CmuxTheme.surface)
     }
 }
 

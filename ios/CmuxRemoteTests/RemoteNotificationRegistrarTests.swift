@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import UserNotifications
+import UIKit
 @testable import CmuxRemote
 
 @MainActor
@@ -29,6 +30,38 @@ final class RemoteNotificationRegistrarTests: XCTestCase {
         await registrar.registerForRemoteNotifications()
 
         XCTAssertEqual(application.registerCallCount, 0)
+    }
+
+    func testSwitchingRelayForwardsCachedAPNsTokenWithItsOwnBearer() async throws {
+        let center = FakeRemoteNotificationAuthorizationCenter(status: .authorized)
+        let application = FakeRemoteNotificationApplication()
+        let registrar = RemoteNotificationRegistrar(notificationCenter: center, application: application)
+        let keychain = Keychain(service: "apns-switch.\(UUID().uuidString)")
+        defer { try? keychain.wipe() }
+        let officePosted = expectation(description: "Office token registered")
+        let homePosted = expectation(description: "Home token registered")
+        let http = MockHTTPClient { request in
+            let host = request.url!.host!
+            if request.url!.path.hasSuffix("/register") {
+                return (Data("{\"device_id\":\"d1\",\"token\":\"\(host)\"}".utf8), 200)
+            }
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(host)")
+            let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String: String]
+            XCTAssertEqual(body["apns_token"], "00ff")
+            if host == "office.ts.net" { officePosted.fulfill() } else { homePosted.fulfill() }
+            return (Data(), 204)
+        }
+        let office = AuthClient(host: "office.ts.net", port: 4399, keychain: keychain, http: http)
+        let home = AuthClient(host: "home.ts.net", port: 4399, keychain: keychain, http: http)
+        try await office.registerIfNeeded()
+        try await home.registerIfNeeded()
+        registrar.application(UIApplication.shared, didRegisterForRemoteNotificationsWithDeviceToken: Data([0x00, 0xff]))
+        registrar.configure(authClient: office)
+        await fulfillment(of: [officePosted], timeout: 2)
+        registrar.configure(authClient: nil)
+        registrar.configure(authClient: home)
+        await fulfillment(of: [homePosted], timeout: 2)
+        registrar.configure(authClient: nil)
     }
 }
 

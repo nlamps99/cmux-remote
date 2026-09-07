@@ -85,8 +85,11 @@ public final class AuthClient: @unchecked Sendable {
         let (data, code) = try await http.request(request)
         guard code == 200 else { throw AuthError.relayRejected(code) }
         let payload = try JSONDecoder().decode(RegisterResponse.self, from: data)
-        try setCredential(.deviceId, payload.deviceId, identity: identity)
-        try setCredential(.bearer, payload.token, identity: identity)
+        try await MainActor.run {
+            try Task.checkCancellation()
+            try setCredential(.deviceId, payload.deviceId, identity: identity)
+            try setCredential(.bearer, payload.token, identity: identity)
+        }
     }
 
     /// The bearer + device id currently held for this endpoint, or nil when the
@@ -124,7 +127,42 @@ public final class AuthClient: @unchecked Sendable {
     }
 
     public func wipe() throws {
-        try keychain.wipe()
+        try Self.removeCredentials(endpoint: endpoint, keychain: keychain)
+    }
+
+    static func removeCredentials(endpoint: RelayEndpoint, keychain: Keychain) throws {
+        let identity = try endpoint.credentialIdentity()
+        for kind in [CredentialKind.bearer, .deviceId] {
+            try keychain.delete(keychainKey(kind, identity: identity))
+        }
+    }
+
+    static func migrateLegacyCredentials(endpoint: RelayEndpoint, keychain: Keychain) throws {
+        let identity = try endpoint.credentialIdentity()
+        let bearerKey = keychainKey(.bearer, identity: identity)
+        let deviceKey = keychainKey(.deviceId, identity: identity)
+        if endpoint.mode == .direct {
+            let oldKey = "relay.credentials.\(endpoint.scheme)://\(endpoint.host.lowercased()):\(endpoint.port)"
+            if let raw = try keychain.get(oldKey) {
+                let record = try JSONDecoder().decode(RegisterResponse.self, from: Data(raw.utf8))
+                if try keychain.get(bearerKey) == nil {
+                    try keychain.set(record.deviceId, for: deviceKey)
+                    try keychain.set(record.token, for: bearerKey)
+                }
+                try keychain.delete(oldKey)
+            }
+        }
+        let legacyIdentity = try keychain.get("relay_endpoint")
+        let legacyHost = try keychain.get("relay_host")
+        let matches = legacyIdentity == identity || (legacyIdentity == nil && endpoint.mode == .direct
+            && legacyHost?.lowercased() == endpoint.host.lowercased())
+        if matches, let bearer = try keychain.get("bearer"), let device = try keychain.get("device_id") {
+            if try keychain.get(bearerKey) == nil {
+                try keychain.set(device, for: deviceKey)
+                try keychain.set(bearer, for: bearerKey)
+            }
+            for key in ["bearer", "device_id", "relay_endpoint", "relay_host"] { try keychain.delete(key) }
+        }
     }
 
     // MARK: - Per-endpoint credential storage

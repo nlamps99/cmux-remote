@@ -13,11 +13,15 @@ struct CmuxRemoteApp: App {
     @State private var notifPresenter = LocalNotificationPresenter()
     @State private var bootstrapped = false
     @State private var activeRPC: RPCClient?
+    @State private var computers = ComputerStore()
+    @State private var connectionTask: Task<Void, Never>?
+    @State private var connectionID = UUID()
     @State private var transportCoordinator = TransportCoordinator {
-        CmuxRemoteApp.resolveTransportSettings()
+        CmuxRemoteApp.resolveTransportSettings(useSavedComputer: true)
     }
     @State private var splashFinished = Self.shouldSkipSplash()
     @AppStorage("cmux.demoMode") private var demoMode: Bool = false
+    @AppStorage("cmux.localNotificationsEnabled") private var localNotificationsEnabled = true
     @AppStorage("cmux.theme") private var themeRaw: String = CmuxColorTheme.storm.rawValue
     @AppStorage("cmux.keepScreenAwake") private var keepScreenAwake: Bool = false
 
@@ -29,11 +33,13 @@ struct CmuxRemoteApp: App {
                     surfaceStore: surfaceStore,
                     notifStore: notifStore,
                     hostStatusStore: hostStatusStore,
+                    computers: computers,
+                    connectionID: connectionID,
                     onDisconnect: disconnect,
                     onReconnect: reconnect,
                     onTriggerTestNotification: triggerTestNotification
                 )
-                .task { await bootstrapOnce() }
+                .task { if connectionTask == nil { reconnect() } }
                 .onOpenURL(perform: handleDeepLink(_:))
                 .opacity(splashFinished ? 1 : 0)
 
@@ -150,11 +156,17 @@ struct CmuxRemoteApp: App {
     /// address or a private-LAN one, and `RelayEndpoint.requiresPairingCode`
     /// decides which pairing path applies. That keeps one host field in Settings
     /// instead of two that mean almost the same thing.
-    static func resolveTransportSettings(
+    nonisolated static func resolveTransportSettings(
         _ info: ProcessInfo = .processInfo,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        useSavedComputer: Bool = false
     ) -> (preference: TransportPreference, candidates: TransportCandidates) {
         let environment = info.environment
+        if useSavedComputer,
+           !["CMUX_HOST", "CMUX_BROKER_URL", "CMUX_TRANSPORT_PREFERENCE", "CMUX_CONNECTION_MODE"].contains(where: { environment[$0] != nil }),
+           let computer = ComputerStore.savedComputer(defaults: defaults) {
+            return (computer.preference, TransportCandidates(lan: computer.direct, broker: computer.broker))
+        }
         func value(_ key: String, _ defaultsKey: String) -> String {
             let fromEnvironment = environment[key] ?? ""
             if !fromEnvironment.isEmpty { return fromEnvironment }
@@ -199,9 +211,15 @@ struct CmuxRemoteApp: App {
     private func bootstrapOnce() async {
         guard !bootstrapped else { return }
         bootstrapped = true
+        let sessionID = connectionID
+        let notifications = notifStore
         let presenter = notifPresenter
-        notifStore.onNew = { record in presenter.present(record) }
-        Task { await presenter.requestAuthorizationIfNeeded() }
+        notifStore.localNotificationsEnabled = localNotificationsEnabled
+        notifStore.onNew = { record in
+            guard sessionID == connectionID else { return }
+            presenter.present(record, relayEndpoint: computers.selectedID?.uuidString)
+        }
+        if localNotificationsEnabled { Task { await presenter.requestAuthorizationIfNeeded() } }
         let processInfo = ProcessInfo.processInfo
         Self.persistConnectionSettingsIfRequested(processInfo)
         if demoMode || Self.shouldUseFakeRelay(processInfo) {
@@ -215,14 +233,28 @@ struct CmuxRemoteApp: App {
             guard result == .ok else { return }
         }
 
+        do {
+            try computers.migrateLegacyCredentials()
+            if processInfo.environment["CMUX_PERSIST_CONNECTION_SETTINGS"] == "1" {
+                try computers.saveCurrentSettings()
+            } else if !computers.pendingNewComputer {
+                computers.activateSelected()
+            }
+        } catch {
+            workspaceStore.connection = .error(error.localizedDescription)
+            return
+        }
+
         let http = URLSessionHTTP()
         let (preference, candidates) = Self.resolveTransportSettings(processInfo)
         guard let selection = await TransportSelector(http: http)
             .select(preference: preference, candidates: candidates)
         else {
+            guard sessionID == connectionID, !Task.isCancelled else { return }
             workspaceStore.connection = .error(L10n.string("Configure Mac host in Settings"))
             return
         }
+        guard sessionID == connectionID, !Task.isCancelled else { return }
         let endpoint = selection.endpoint
         os_log("cmux bootstrap preference=%{public}@ mode=%{public}@",
                preference.rawValue, endpoint.mode.rawValue)
@@ -241,6 +273,8 @@ struct CmuxRemoteApp: App {
         os_log("cmux register start mode=%{public}@", endpoint.mode.rawValue)
         do {
             try await auth.registerIfNeeded()
+            guard sessionID == connectionID, !Task.isCancelled else { return }
+            try computers.clearPairingCode(for: endpoint)
             Self.clearStoredPairingCode(
                 afterSuccessfulRegistrationWith: endpoint,
                 defaults: .standard
@@ -258,6 +292,7 @@ struct CmuxRemoteApp: App {
                 await remoteNotifications.registerForRemoteNotifications()
             }
         } catch {
+            guard sessionID == connectionID, !Task.isCancelled else { return }
             os_log("cmux register FAILED: %{public}@", String(describing: error))
             workspaceStore.connection = .error(String(describing: error))
             return
@@ -273,7 +308,11 @@ struct CmuxRemoteApp: App {
         let liveSurfaceStore = SurfaceStore(rpc: rpc)
         let liveHostStatusStore = HostStatusStore(rpc: rpc)
         await MainActor.run {
-            liveWorkspaceStore.onWorkspaceAlert = { notifStore.append($0) }
+            guard sessionID == connectionID, !Task.isCancelled else { return }
+            liveWorkspaceStore.onWorkspaceAlert = {
+                guard sessionID == connectionID else { return }
+                notifications.append($0, deliveryPolicy: .userInputRequired)
+            }
             liveWorkspaceStore.activeTransport = endpoint.activeTransport
             workspaceStore = liveWorkspaceStore
             surfaceStore = liveSurfaceStore
@@ -282,19 +321,22 @@ struct CmuxRemoteApp: App {
         }
         await rpc.onPush { frame in
             Task { @MainActor in
+                guard sessionID == connectionID else { return }
                 liveSurfaceStore.ingest(frame)
-                notifStore.ingest(frame)
+                notifications.ingest(frame)
             }
         }
         await ws.setOnText { text in Task { await rpc.handleIncoming(text: text) } }
         await ws.setOnClose { _ in
-            Task {
+            Task { @MainActor in
+                guard sessionID == connectionID else { return }
                 await rpc.failAllPending(RPCClientError.closed)
                 await MainActor.run { liveWorkspaceStore.connection = .disconnected }
             }
         }
         await ws.setOnOpen {
-            Task {
+            Task { @MainActor in
+                guard sessionID == connectionID else { return }
                 let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.4"
                 let hello = HelloFrame(deviceId: deviceId, appVersion: appVersion, protocolVersion: 1)
                 if let data = try? SharedKitJSON.deterministicEncoder.encode(hello),
@@ -305,8 +347,11 @@ struct CmuxRemoteApp: App {
                 await liveSurfaceStore.resubscribe()
             }
         }
+        guard sessionID == connectionID, !Task.isCancelled else { await rpc.close(); return }
         await ws.connect()
+        guard sessionID == connectionID, !Task.isCancelled else { await rpc.close(); return }
         await liveWorkspaceStore.refresh()
+        guard sessionID == connectionID, !Task.isCancelled else { return }
         await liveHostStatusStore.refreshBattery()
     }
 
@@ -321,11 +366,16 @@ struct CmuxRemoteApp: App {
 
     @MainActor
     private func bootstrapDemo() async {
+        let sessionID = connectionID
+        let notifications = notifStore
         let rpc = DemoRPCDispatch()
         let liveWorkspaceStore = WorkspaceStore(rpc: rpc)
         let liveSurfaceStore = SurfaceStore(rpc: rpc)
         let liveHostStatusStore = HostStatusStore(rpc: rpc)
-        liveWorkspaceStore.onWorkspaceAlert = { notifStore.append($0) }
+        liveWorkspaceStore.onWorkspaceAlert = {
+            guard sessionID == connectionID else { return }
+            notifications.append($0, deliveryPolicy: .userInputRequired)
+        }
         // Demo mode has no real link; showing the LAN badge would misrepresent
         // it, so pick the transport the demo narrative implies.
         liveWorkspaceStore.activeTransport = .broker
@@ -337,6 +387,7 @@ struct CmuxRemoteApp: App {
         // so the terminal mirror lights up just like the live path would.
         await rpc.setOnSubscribe { surfaceId in
             await MainActor.run {
+                guard sessionID == connectionID else { return }
                 if let frame = DemoContent.screenFull(for: surfaceId) {
                     liveSurfaceStore.ingest(.screenFull(frame))
                 }
@@ -344,6 +395,7 @@ struct CmuxRemoteApp: App {
         }
 
         await liveWorkspaceStore.refresh()
+        guard sessionID == connectionID, !Task.isCancelled else { return }
         await liveHostStatusStore.refreshBattery()
 
         // Seed the inbox after a short beat so reviewers see notifications
@@ -351,6 +403,7 @@ struct CmuxRemoteApp: App {
         let store = notifStore
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard sessionID == connectionID else { return }
             for record in DemoContent.notifications() {
                 store.append(record)
             }
@@ -366,30 +419,39 @@ struct CmuxRemoteApp: App {
 
     @MainActor
     private func reconnect() {
+        startConnection(connect: true)
+    }
+
+    @MainActor
+    private func startConnection(connect: Bool) {
+        let previousTask = connectionTask
+        previousTask?.cancel()
+        connectionID = UUID()
+        let sessionID = connectionID
         let rpc = activeRPC
         activeRPC = nil
-        workspaceStore.reset()
-        surfaceStore.reset()
-        hostStatusStore.reset()
+        transportCoordinator.disconnected()
+        transportCoordinator.stop()
+        remoteNotifications.configure(authClient: nil)
+        notifStore.onNew = nil
+        workspaceStore = WorkspaceStore(rpc: OfflineRPCDispatch())
+        surfaceStore = SurfaceStore(rpc: OfflineRPCDispatch())
+        hostStatusStore = HostStatusStore(rpc: OfflineRPCDispatch())
+        notifStore = NotificationStore()
         bootstrapped = false
-        Task { @MainActor in
+        connectionTask = Task { @MainActor in
             await rpc?.close()
+            await previousTask?.value
+            guard connect, sessionID == connectionID, !Task.isCancelled else { return }
             await bootstrapOnce()
         }
     }
 
     @MainActor
     private func disconnect() {
-        let rpc = activeRPC
-        Task { await rpc?.close() }
-        activeRPC = nil
-        transportCoordinator.disconnected()
-        transportCoordinator.stop()
-        try? Keychain(service: "com.genie.cmuxremote").wipe()
-        workspaceStore.reset()
-        surfaceStore.reset()
-        hostStatusStore.reset()
-        bootstrapped = false
+        startConnection(connect: false)
+        do { try computers.unpairSelected() }
+        catch { workspaceStore.connection = .error(error.localizedDescription) }
     }
 
     private func handleDeepLink(_ url: URL) {
@@ -397,6 +459,8 @@ struct CmuxRemoteApp: App {
         // rather than in the in-app scanner. Store the connection details and let
         // the user confirm in Settings; pairing is not started automatically.
         if let payload = try? PairingPayload(url: url) {
+            transportCoordinator.stop()
+            computers.pendingNewComputer = true
             Self.persist(payload, defaults: UserDefaults.standard)
             return
         }
@@ -422,6 +486,8 @@ struct CmuxRemoteApp: App {
             defaults.set(payload.lanPairingCode, forKey: "cmux.lanPairingCode")
             defaults.set(TransportPreference.auto.rawValue, forKey: "cmux.transportPreference")
         } else {
+            defaults.removeObject(forKey: "cmux.host")
+            defaults.removeObject(forKey: "cmux.lanPairingCode")
             defaults.set(TransportPreference.broker.rawValue, forKey: "cmux.transportPreference")
         }
         // Keep the legacy key in step so a downgrade, or any code still reading

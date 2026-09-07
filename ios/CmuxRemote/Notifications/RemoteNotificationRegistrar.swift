@@ -56,7 +56,7 @@ public final class RemoteNotificationRegistrar: NSObject, UIApplicationDelegate,
     private let application: any RemoteNotificationApplication
     private var authClient: AuthClient?
     private var pendingDeviceToken: Data?
-    private var forwarding = false
+    private var forwardingTask: Task<Void, Never>?
 
     public override init() {
         self.notificationCenter = RemoteNotificationCenterAdapter(center: .current())
@@ -93,11 +93,10 @@ public final class RemoteNotificationRegistrar: NSObject, UIApplicationDelegate,
         return true
     }
 
-    public func configure(authClient: AuthClient) {
+    public func configure(authClient: AuthClient?) {
+        forwardingTask?.cancel()
         self.authClient = authClient
-        if pendingDeviceToken != nil {
-            Task { @MainActor in await forwardPendingTokenIfPossible() }
-        }
+        forwardPendingTokenIfPossible()
     }
 
     public func registerForRemoteNotifications() async {
@@ -116,7 +115,7 @@ public final class RemoteNotificationRegistrar: NSObject, UIApplicationDelegate,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
         pendingDeviceToken = deviceToken
-        Task { @MainActor in await forwardPendingTokenIfPossible() }
+        forwardPendingTokenIfPossible()
     }
 
     public func application(
@@ -144,18 +143,21 @@ public final class RemoteNotificationRegistrar: NSObject, UIApplicationDelegate,
         )
     }
 
-    private func forwardPendingTokenIfPossible() async {
-        guard !forwarding, let authClient, let token = pendingDeviceToken else { return }
-        forwarding = true
-        defer { forwarding = false }
-        do {
-            try await authClient.registerAPNsTokenHex(
-                Self.tokenHex(from: token),
-                environment: Self.defaultEnvironment
-            )
-            pendingDeviceToken = nil
-        } catch {
-            os_log("remote notification token forwarding failed: %{public}@", String(describing: error))
+    private func forwardPendingTokenIfPossible() {
+        forwardingTask?.cancel()
+        guard let authClient, let token = pendingDeviceToken else { return }
+        // Keep the token so each newly selected relay receives its own registration.
+        forwardingTask = Task { @MainActor in
+            do {
+                try await authClient.registerAPNsTokenHex(
+                    Self.tokenHex(from: token),
+                    environment: Self.defaultEnvironment
+                )
+            } catch {
+                if !Task.isCancelled {
+                    os_log("remote notification token forwarding failed: %{public}@", String(describing: error))
+                }
+            }
         }
     }
 }

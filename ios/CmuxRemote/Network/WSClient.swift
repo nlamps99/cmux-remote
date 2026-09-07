@@ -116,6 +116,7 @@ public actor WSClient {
     private func reconnectAfterBackoff() async {
         let delay = min(backoff, 30)
         try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        guard shouldReconnect, !Task.isCancelled else { return }
         backoff = min(backoff * 2, 30)
         connect()
     }

@@ -4,6 +4,7 @@ import UIKit
 
 struct SettingsView: View {
     @Bindable var store: WorkspaceStore
+    let computers: ComputerStore
     let onDisconnect: () -> Void
     let onReconnect: () -> Void
     let onTerminalPreferencesChanged: () -> Void
@@ -31,6 +32,9 @@ struct SettingsView: View {
     @State private var roundTripStatus: TestNotificationStatus = .idle
     @State private var showPairingScanner = false
     @State private var pairingScanConfirmation: String?
+    @State private var editingComputer: Computer?
+    @State private var removingComputer: Computer?
+    @State private var computerError: String?
 
     var body: some View {
         NavigationStack {
@@ -39,6 +43,8 @@ struct SettingsView: View {
                     Text(L10n.string("settings"))
                         .cmuxLargeTitle()
                         .foregroundStyle(CmuxTheme.ink)
+
+                    computerConnections
 
                     settingsMenuGroup(title: "settings connection") {
                         settingsMenuItem(.connection)
@@ -70,6 +76,85 @@ struct SettingsView: View {
         }
         .onAppear { CmuxTheme.apply(themeRawValue: themeRaw) }
         .onChange(of: themeRaw) { _, newValue in CmuxTheme.apply(themeRawValue: newValue) }
+        .sheet(item: $editingComputer) { computer in
+            ComputerEditor(computer: computer, codes: (try? computers.pairingCodes(for: computer.id)) ?? ComputerPairingCodes()) { updated, codes in
+                try computers.save(updated, codes: codes)
+                computers.select(updated.id)
+                demoMode = false
+                onReconnect()
+            }
+        }
+        .confirmationDialog(L10n.string("Remove Computer"), isPresented: Binding(
+            get: { removingComputer != nil }, set: { if !$0 { removingComputer = nil } }
+        ), titleVisibility: .visible) {
+            Button(L10n.string("Remove Computer"), role: .destructive) {
+                guard let computer = removingComputer else { return }
+                do {
+                    let wasSelected = computer.id == computers.selectedID
+                    try computers.remove(computer)
+                    if wasSelected { onReconnect() }
+                } catch { computerError = error.localizedDescription }
+                removingComputer = nil
+            }
+        }
+        .alert(L10n.string("Unable to Update Computer"), isPresented: Binding(
+            get: { computerError != nil }, set: { if !$0 { computerError = nil } }
+        )) {
+            Button(L10n.string("OK")) { computerError = nil }
+        } message: { Text(computerError ?? "") }
+    }
+
+    private var computerConnections: some View {
+        VStack(alignment: .leading, spacing: CmuxSpacing.md) {
+            HStack {
+                CmuxRule(title: L10n.string("Computers"))
+                Button { editingComputer = Computer(name: "", host: "") } label: {
+                    Image(systemName: "plus").frame(width: 44, height: 44)
+                }
+                .accessibilityIdentifier("AddComputerButton")
+                .accessibilityLabel(L10n.string("Add Computer"))
+            }
+            if computers.computers.isEmpty {
+                Text(L10n.string("No saved computers")).cmuxCaption().foregroundStyle(CmuxTheme.muted)
+            }
+            ForEach(computers.computers) { computer in
+                HStack(spacing: CmuxSpacing.md) {
+                    Button {
+                        computers.select(computer.id)
+                        demoMode = false
+                        onReconnect()
+                    } label: {
+                        HStack(spacing: CmuxSpacing.md) {
+                            Image(systemName: computer.id == computers.selectedID ? "checkmark.circle.fill" : "desktopcomputer")
+                                .foregroundStyle(computer.id == computers.selectedID ? CmuxTheme.success : CmuxTheme.muted)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(computer.name).cmuxHeadline().foregroundStyle(CmuxTheme.ink)
+                                Text(verbatim: computer.displayAddress).cmuxCaption().foregroundStyle(CmuxTheme.muted)
+                            }
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(minHeight: 52).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("SelectComputer-\(computer.name)")
+                    Menu {
+                        Button(L10n.string("Edit"), systemImage: "pencil") { editingComputer = computer }
+                        Button(L10n.string("Remove"), systemImage: "trash", role: .destructive) { removingComputer = computer }
+                    } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+                    .accessibilityLabel(L10n.format("Manage %@", computer.name))
+                }
+                Divider()
+            }
+        }
+    }
+
+    private func saveConnection() {
+        do {
+            try computers.saveCurrentSettings()
+            demoMode = false
+            onReconnect()
+        } catch { computerError = error.localizedDescription }
     }
 
     private func settingsMenuItem(_ section: SettingsSection) -> some View {
@@ -248,7 +333,7 @@ struct SettingsView: View {
                     Spacer()
                 }
 
-                Button(action: onReconnect) {
+                Button(action: saveConnection) {
                     HStack(spacing: CmuxSpacing.sm) {
                         Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .bold))
                         Text(L10n.string("[ SAVE & RECONNECT ]")).cmuxDisplay(12)
@@ -273,6 +358,7 @@ struct SettingsView: View {
     /// reconnect on its own: the user still confirms with SAVE & RECONNECT, so a
     /// mis-scan cannot silently replace a working configuration.
     private func apply(_ payload: PairingPayload) {
+        computers.pendingNewComputer = true
         brokerURL = payload.serverURL
         relayId = payload.relayId
         pairingCode = payload.pairingCode
@@ -291,6 +377,8 @@ struct SettingsView: View {
                 payload.relayId
             )
         } else {
+            host = ""
+            lanPairingCode = ""
             transportPreferenceRaw = TransportPreference.broker.rawValue
             pairingScanConfirmation = L10n.format("scanned %@ — tap save & reconnect", payload.relayId)
         }
@@ -350,10 +438,11 @@ struct SettingsView: View {
             Button(role: .destructive, action: onDisconnect) {
                 HStack(spacing: CmuxSpacing.sm) {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
-                    Text(L10n.string("[ UNPAIR THIS DEVICE ]")).cmuxDisplay(12)
+                    Text(L10n.string("[ UNPAIR CURRENT COMPUTER ]")).cmuxDisplay(12)
                 }
             }
             .buttonStyle(CmuxOutlineButtonStyle(foreground: CmuxTheme.critical, border: CmuxTheme.critical.opacity(0.45)))
+            .disabled(computers.selected == nil)
         }
     }
 

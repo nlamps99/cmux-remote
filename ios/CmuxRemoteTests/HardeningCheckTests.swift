@@ -5,9 +5,13 @@ final class HardeningCheckTests: XCTestCase {
     func testFailedCheckWipesKeychain() {
         let keychain = Keychain(service: "h.\(UUID().uuidString)")
         try? keychain.set("v", for: "bearer")
+        try? keychain.set("office-token", for: "relay.credentials.http://office.ts.net:4399")
+        try? keychain.set("home-token", for: "relay.credentials.http://home.ts.net:4399")
         let check = HardeningCheck(jailbroken: { true }, debugged: { false }, keychain: keychain)
         XCTAssertEqual(check.runAtLaunch(), .failedJailbroken)
         XCTAssertNil(try? keychain.get("bearer"))
+        XCTAssertNil(try? keychain.get("relay.credentials.http://office.ts.net:4399"))
+        XCTAssertNil(try? keychain.get("relay.credentials.http://home.ts.net:4399"))
     }
 
     func testCleanCheckReturnsOk() {

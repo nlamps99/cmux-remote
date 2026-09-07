@@ -84,11 +84,35 @@ tailscale status     # if you'd rather use the MagicDNS name (e.g. my-mac)
 
 On the iPhone, open the cmux Remote app and:
 
-1. Tap **Add Mac**
-2. Enter the IP (or MagicDNS name) above, port **`4399`**
-3. **Approve** the pairing request that appears in the Mac's menu bar
+1. Open **Settings**, then tap **+** under **computers**.
+2. Enter a name, the Tailscale IP (or full `*.ts.net` DNS name), and port **`4399`**.
+3. Tap **Save & Connect**. The relay checks your Tailscale identity against its allowed logins.
 
 Once connected, the workspace list appears.
+
+### Multiple Macs
+
+Repeat the setup on each Mac, then add each one in Settings. Use the computer
+menu at the top of the app to switch. The app remembers the selected computer
+after restart and keeps a separate Keychain credential for each address and port.
+Existing single-Mac settings and matching credentials migrate automatically.
+
+Each computer can use DIRECT, SERVER, or AUTO. AUTO keeps both its LAN and
+Broker settings and credentials. The add/edit sheet also accepts the relay's
+pairing QR code. Pairing codes are stored separately in Keychain and cleared
+for the relevant transport after registration succeeds.
+
+Only one relay is connected at a time. Switching or reconnecting clears the
+current workspace, terminal, and Inbox state; notification history is not merged
+across computers. Local notification links only open a workspace when their
+source matches the selected computer. Remote notifications without a source
+identifier open Inbox instead of selecting a workspace.
+
+Use a computer's **...** menu to edit or remove it. **Unpair Current Computer**
+clears that computer's local credential while keeping its address for reconnecting.
+Removing or unpairing a computer does not clear other computers' credentials or
+revoke the registration on the Mac. For server-side revocation, use the relay's
+device revocation command.
 
 ---
 

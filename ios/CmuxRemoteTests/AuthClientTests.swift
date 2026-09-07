@@ -411,6 +411,73 @@ final class AuthClientTests: XCTestCase {
 
         try await client.registerAPNsTokenHex("00ff10", environment: .sandbox)
     }
+    func testSameHostDifferentPortsHaveIndependentTokens() async throws {
+        let keychain = Keychain(service: "auth.\(UUID().uuidString)")
+        defer { try? keychain.wipe() }
+        let http = MockHTTPClient { request in
+            let token = String(request.url!.port!)
+            return (Data("{\"device_id\":\"d1\",\"token\":\"\(token)\"}".utf8), 200)
+        }
+        let first = AuthClient(host: "mac.ts.net", port: 4399, keychain: keychain, http: http)
+        let second = AuthClient(host: "mac.ts.net", port: 4400, keychain: keychain, http: http)
+        try await first.registerIfNeeded()
+        try await second.registerIfNeeded()
+        XCTAssertEqual(try first.storedCredentials()?.token, "4399")
+        XCTAssertEqual(try second.storedCredentials()?.token, "4400")
+    }
+
+    func testFailedRegistrationDoesNotDeleteOtherComputerCredentials() async throws {
+        let keychain = Keychain(service: "auth.\(UUID().uuidString)")
+        defer { try? keychain.wipe() }
+        let first = AuthClient(host: "mac.ts.net", port: 4399, keychain: keychain,
+                               http: MockHTTPClient { _ in (Data(#"{"device_id":"d1","token":"abc"}"#.utf8), 200) })
+        try await first.registerIfNeeded()
+        let second = AuthClient(host: "offline.ts.net", port: 4399, keychain: keychain,
+                                http: MockHTTPClient { _ in (Data(), 503) })
+        do {
+            try await second.registerIfNeeded()
+            XCTFail("Expected registration failure")
+        } catch AuthError.relayRejected(503) {}
+        XCTAssertEqual(try first.storedCredentials()?.token, "abc")
+        XCTAssertNil(try second.storedCredentials())
+    }
+
+    func testCancelledRegistrationCannotRestoreRemovedCredentials() async throws {
+        let keychain = Keychain(service: "auth.\(UUID().uuidString)")
+        defer { try? keychain.wipe() }
+        let started = expectation(description: "Registration started")
+        let http = SuspendedRegistrationHTTP { started.fulfill() }
+        let auth = AuthClient(host: "office.ts.net", port: 4399, keychain: keychain, http: http)
+        let task = Task { try await auth.registerIfNeeded() }
+        await fulfillment(of: [started], timeout: 2)
+        task.cancel()
+        try auth.wipe()
+        await http.finish()
+        do {
+            try await task.value
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {}
+        XCTAssertNil(try auth.storedCredentials())
+    }
+}
+
+private actor SuspendedRegistrationHTTP: HTTPClientFacade {
+    let onStart: @Sendable () -> Void
+    private var continuation: CheckedContinuation<(Data, Int), Never>?
+
+    init(onStart: @escaping @Sendable () -> Void) { self.onStart = onStart }
+
+    func request(_ request: URLRequest) async throws -> (Data, Int) {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            onStart()
+        }
+    }
+
+    func finish() {
+        continuation?.resume(returning: (Data(#"{"device_id":"d1","token":"late-token"}"#.utf8), 200))
+        continuation = nil
+    }
 }
 
 final class MockHTTPClient: HTTPClientFacade, @unchecked Sendable {

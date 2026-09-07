@@ -16,6 +16,7 @@ public final class TransportCoordinator {
     private var activeEndpoint: RelayEndpoint?
     private var onSwitch: (@MainActor () -> Void)?
     private var watching = false
+    private var generation = UUID()
 
     public init(
         observer: NetworkPathObserver = NetworkPathObserver(),
@@ -34,6 +35,7 @@ public final class TransportCoordinator {
     /// nothing to re-decide, and tearing down a working session on every Wi-Fi
     /// blip would be a regression.
     public func connected(to endpoint: RelayEndpoint, onSwitch: @escaping @MainActor () -> Void) {
+        generation = UUID()
         activeEndpoint = endpoint
         self.onSwitch = onSwitch
         guard !watching, settings().preference == .auto else { return }
@@ -51,9 +53,11 @@ public final class TransportCoordinator {
     /// observer drives it in the app.
     @discardableResult
     public func pathChanged() async -> Bool {
+        let generation = self.generation
         let (preference, candidates) = settings()
         guard preference == .auto else { return false }
         guard let selection = await selector.select(preference: preference, candidates: candidates),
+              generation == self.generation,
               selection.endpoint != activeEndpoint
         else { return false }
         os_log("cmux transport switch to mode=%{public}@", selection.endpoint.mode.rawValue)
@@ -62,6 +66,8 @@ public final class TransportCoordinator {
     }
 
     public func stop() {
+        generation = UUID()
+        onSwitch = nil
         observer.cancel()
         watching = false
     }

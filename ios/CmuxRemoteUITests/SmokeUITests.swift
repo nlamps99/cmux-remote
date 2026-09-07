@@ -1,6 +1,68 @@
 import XCTest
 
 final class SmokeUITests: XCTestCase {
+    func testSavedComputersCanBeSwitchedEditedAndRemoved() throws {
+        let app = launchFakeRelayApp()
+        app.buttons["Settings"].tap()
+        let suffix = String(UUID().uuidString.prefix(6))
+        let office = "Office \(suffix)"
+        let home = "Home \(suffix)"
+        addComputer(in: app, name: office, host: "office-\(suffix.lowercased()).ts.net")
+        addComputer(in: app, name: home, host: "home-\(suffix.lowercased()).ts.net")
+        XCTAssertTrue(app.buttons["ComputerSwitcher"].label.contains(home))
+
+        app.buttons["ComputerSwitcher"].tap()
+        app.buttons[office].tap()
+        XCTAssertTrue(app.buttons["ComputerSwitcher"].label.contains(office))
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["ComputerSwitcher"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["ComputerSwitcher"].label.contains(office))
+        app.buttons["Settings"].tap()
+        XCTAssertTrue(app.buttons["SelectComputer-\(home)"].exists)
+
+        app.buttons["Manage \(office)"].tap()
+        app.buttons["Edit"].tap()
+        let field = app.textFields["ComputerNameField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: office.count) + "Work \(suffix)")
+        app.buttons["SaveComputerButton"].tap()
+        XCTAssertTrue(app.buttons["SelectComputer-Work \(suffix)"].waitForExistence(timeout: 3))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Saved computers"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        removeComputer(in: app, name: "Work \(suffix)")
+        XCTAssertFalse(app.buttons["ComputerSwitcher"].label.contains("Work \(suffix)"))
+        app.buttons["SelectComputer-\(home)"].tap()
+        XCTAssertTrue(app.buttons["ComputerSwitcher"].label.contains(home))
+        removeComputer(in: app, name: home)
+        XCTAssertFalse(app.buttons["SelectComputer-\(home)"].exists)
+    }
+
+    private func addComputer(in app: XCUIApplication, name: String, host: String) {
+        app.buttons["AddComputerButton"].tap()
+        let nameField = app.textFields["ComputerNameField"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 3))
+        nameField.tap()
+        nameField.typeText(name)
+        let hostField = app.textFields["ComputerHostField"]
+        hostField.tap()
+        hostField.typeText(host)
+        app.buttons["SaveComputerButton"].tap()
+        XCTAssertTrue(app.buttons["SelectComputer-\(name)"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["\(host):4399"].exists)
+    }
+
+    private func removeComputer(in app: XCUIApplication, name: String) {
+        app.buttons["Manage \(name)"].tap()
+        app.buttons["Remove"].tap()
+        app.buttons["Remove Computer"].tap()
+        XCTAssertTrue(app.buttons["SelectComputer-\(name)"].waitForNonExistence(timeout: 3))
+    }
+
     func testTabsExistAfterConnect() throws {
         let app = launchFakeRelayApp()
         XCTAssertTrue(app.buttons["Workspaces"].waitForExistence(timeout: 5))
@@ -105,6 +167,10 @@ final class SmokeUITests: XCTestCase {
 
     func testKeyboardKeepsTerminalAndComposerControlsVisible() throws {
         let app = launchFakeRelayApp()
+        let computerName = "Keyboard QA \(UUID().uuidString.prefix(6))"
+        app.buttons["Settings"].tap()
+        addComputer(in: app, name: computerName, host: "keyboard-\(UUID().uuidString.lowercased()).ts.net")
+        app.buttons["Workspaces"].tap()
 
         let workspace = primaryWorkspaceButton(in: app)
         XCTAssertTrue(workspace.waitForExistence(timeout: 5))
@@ -155,6 +221,14 @@ final class SmokeUITests: XCTestCase {
 
         scrollButton.tap()
         XCTAssertTrue(keyboard.exists, "Scroll-to-bottom must not steal focus or toggle the software keyboard")
+        XCTAssertTrue(app.staticTexts[computerName].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Selected computer with terminal keyboard"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        app.buttons["WorkspaceBackButton"].tap()
+        app.buttons["Settings"].tap()
+        removeComputer(in: app, name: computerName)
     }
 
 
@@ -254,7 +328,10 @@ final class SmokeUITests: XCTestCase {
         app.launchEnvironment["CMUX_FAKE_RELAY"] = "1"
         app.launchEnvironment["CMUX_SKIP_SPLASH"] = "1"
         app.launchArguments.append("--cmux-skip-splash")
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchArguments.append("-cmux.demoMode")
+        app.launchArguments.append("NO")
+        app.launchArguments.append("-cmux.localNotificationsEnabled")
         app.launchArguments.append("NO")
         app.launch()
         return app

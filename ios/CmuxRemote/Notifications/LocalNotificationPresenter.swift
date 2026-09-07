@@ -57,11 +57,11 @@ public final class LocalNotificationPresenter {
         await ensureAuthorized()
     }
 
-    public func present(_ record: NotificationRecord) {
-        Task { await self.presentAsync(record) }
+    public func present(_ record: NotificationRecord, relayEndpoint: String? = nil) {
+        Task { await self.presentAsync(record, relayEndpoint: relayEndpoint) }
     }
 
-    private func presentAsync(_ record: NotificationRecord) async {
+    private func presentAsync(_ record: NotificationRecord, relayEndpoint: String?) async {
         guard await ensureAuthorized() else { return }
 
         let content = UNMutableNotificationContent()
@@ -77,9 +77,13 @@ public final class LocalNotificationPresenter {
             "surface_id": record.surfaceId ?? "",
             "notification_id": record.id,
         ]
+        if let relayEndpoint {
+            content.userInfo["relay_endpoint"] = relayEndpoint
+            content.threadIdentifier = "\(relayEndpoint).\(record.threadId)"
+        }
 
         let request = UNNotificationRequest(
-            identifier: "cmux.\(record.id)",
+            identifier: "cmux.\(relayEndpoint.map { "\($0)." } ?? "")\(record.id)",
             content: content,
             trigger: nil
         )

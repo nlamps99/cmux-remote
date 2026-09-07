@@ -5,7 +5,7 @@ import Foundation
 /// Distinct from ``ConnectionMode``, which names the transport actually in use:
 /// `auto` is a preference that resolves to one of the concrete modes at connect
 /// time, so `RelayEndpoint` never has to represent an unresolved state.
-public enum TransportPreference: String, CaseIterable, Identifiable, Sendable {
+public enum TransportPreference: String, CaseIterable, Identifiable, Sendable, Codable {
     case direct
     case broker
     case auto

@@ -1,6 +1,6 @@
 import Foundation
 
-public enum ConnectionMode: String, CaseIterable, Identifiable, Sendable {
+public enum ConnectionMode: String, CaseIterable, Identifiable, Sendable, Codable {
     case direct
     case broker
 
@@ -14,7 +14,7 @@ public enum ConnectionMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-public struct RelayEndpoint: Equatable, Sendable {
+public struct RelayEndpoint: Equatable, Sendable, Codable {
     public let mode: ConnectionMode
     public let host: String
     public let port: Int
@@ -202,6 +202,28 @@ public struct RelayEndpoint: Equatable, Sendable {
         components.queryItems = queryItems.isEmpty ? nil : queryItems
         guard let url = components.url else { throw AuthError.invalidURL }
         return url
+    }
+}
+
+extension RelayEndpoint {
+    public init(host: String, port: Int = 4399) {
+        self = .direct(host: host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), port: port)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try values.decodeIfPresent(ConnectionMode.self, forKey: .mode) ?? .direct
+        host = try values.decodeIfPresent(String.self, forKey: .host) ?? ""
+        port = try values.decodeIfPresent(Int.self, forKey: .port) ?? 4399
+        scheme = try values.decodeIfPresent(String.self, forKey: .scheme) ?? "http"
+        brokerBaseURL = try values.decodeIfPresent(String.self, forKey: .brokerBaseURL) ?? ""
+        relayId = try values.decodeIfPresent(String.self, forKey: .relayId) ?? ""
+    }
+
+    var key: String { (try? credentialIdentity()) ?? "" }
+    var isValid: Bool {
+        if mode == .direct, host.contains(where: { $0.isWhitespace || "/:@?#".contains($0) }) { return false }
+        return (try? validate()) != nil
     }
 }
 

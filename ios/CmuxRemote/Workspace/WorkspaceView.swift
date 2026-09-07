@@ -14,6 +14,7 @@ struct WorkspaceView: View {
     @Bindable var hostStatusStore: HostStatusStore
     @Binding var preferredSurfaceId: String?
     let onBack: () -> Void
+    var computerName: String? = nil
     @State private var showDrawer = false
     @State private var activeWorkspaceId: String?
     @State private var activeSurfaceId: String?
@@ -230,10 +231,15 @@ struct WorkspaceView: View {
                     Text("●")
                         .cmuxDisplay(11)
                         .foregroundStyle(demoMode ? CmuxTheme.accentYellow : CmuxTheme.accentGreen)
-                    Text(currentWorkspace?.name ?? L10n.string("no workspace"))
-                        .cmuxMono(13, weight: .medium)
-                        .foregroundStyle(CmuxTheme.ink)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 1) {
+                        if let computerName {
+                            Text(computerName).cmuxMono(9).foregroundStyle(CmuxTheme.inkDim).lineLimit(1)
+                        }
+                        Text(currentWorkspace?.name ?? L10n.string("no workspace"))
+                            .cmuxMono(13, weight: .medium)
+                            .foregroundStyle(CmuxTheme.ink)
+                            .lineLimit(1)
+                    }
                     if demoMode {
                         Text(L10n.string("DEMO"))
                             .cmuxDisplay(9)

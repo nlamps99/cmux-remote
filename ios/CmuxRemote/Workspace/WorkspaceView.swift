@@ -24,6 +24,11 @@ struct WorkspaceView: View {
     @State private var headerHeight: CGFloat = 128
     @State private var accessoryHeight: CGFloat = 172
     @State private var keyboardHeight: CGFloat = 0
+    // Keep the physical home-indicator inset separate from SwiftUI's dynamic
+    // keyboard safe area. On iPad, the latter changes after the keyboard
+    // animation finishes; using it in the keyboard offset calculation made
+    // the accessory panel rise briefly and then fall back down.
+    @State private var containerBottomInset: CGFloat = 0
     @State private var scrollToBottomRequest = 0
     @State private var pendingCloseSurface: Surface?
     @State private var surfaceActionInFlight = false
@@ -46,16 +51,20 @@ struct WorkspaceView: View {
             // automatic keyboard avoidance is disabled below so the terminal and
             // its overlay always use this one, window-relative measurement.
             //
-            // `keyboardHeight` is the keyboard's overlap with the window, which
-            // already includes the bottom safe-area (home indicator).  The
-            // composer VStack only ignores the `.keyboard` safe area, so it still
-            // sits above the container safe area.  Subtract that inset so we don't
-            // double-count it and shove the bar too high above the keyboard.
+            // The terminal is measured against the window, not the safe area, so
+            // it keeps filling the screen while we drive its content insets.
+            // `keyboardHeight` is used only for those insets and for deciding
+            // whether the header collapses — never for positioning the accessory
+            // panel. Hand-computing that position means reconciling three
+            // independently-measured quantities (keyboard overlap, the captured
+            // container inset, and whatever inset SwiftUI actually applies), and
+            // any drift between them shows up as a band of dead space under the
+            // panel. SwiftUI's own keyboard avoidance already places a view
+            // exactly on the keyboard's top edge, so the panel opts *in* to it.
             let bottomObstruction = keyboardVisible
-                ? max(0, keyboardHeight - proxy.safeAreaInsets.bottom)
+                ? max(0, keyboardHeight - containerBottomInset)
                 : 0
-            let accessoryBottomPadding = bottomObstruction + 12
-            let terminalBottomInset = accessoryHeight + accessoryBottomPadding + 10
+            let terminalBottomInset = accessoryHeight + bottomObstruction + 22
             let terminalTopInset = keyboardControlsActive
                 ? proxy.safeAreaInsets.top + 20
                 : proxy.safeAreaInsets.top + headerHeight + 10
@@ -67,28 +76,46 @@ struct WorkspaceView: View {
                     scrollToBottomRequest: scrollToBottomRequest
                 )
                 .ignoresSafeArea(.container, edges: .all)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
 
+                // Header keeps its place when the keyboard rises.
                 VStack(spacing: 0) {
                     terminalHeader
                         .padding(.horizontal, 18)
                         .padding(.top, 12)
                         .frame(maxWidth: isPadLandscape ? 1080 : .infinity)
                         .readHeight($headerHeight)
-                    Spacer()
+                    Spacer(minLength: 0)
+                }
+                .ignoresSafeArea(.keyboard, edges: .bottom)
+
+                // No `.ignoresSafeArea(.keyboard)` here: that is what pins this
+                // stack's bottom edge to the keyboard's top edge, with no
+                // arithmetic and nothing left over underneath.
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+
+                    scrollToBottomButton
+                        .padding(.trailing, 24)
+                        .padding(.bottom, 10)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+
                     terminalAccessory()
                         .frame(maxWidth: isPadLandscape ? 920 : .infinity)
                         .readHeight($accessoryHeight)
                         .padding(.horizontal, 16)
-                        .padding(.bottom, accessoryBottomPadding)
                 }
-
-                scrollToBottomButton
-                    .padding(.trailing, 24)
-                    .padding(.bottom, accessoryHeight + accessoryBottomPadding + 22)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
-            .ignoresSafeArea(.keyboard, edges: .bottom)
             .background(CmuxTheme.terminal.ignoresSafeArea())
+            .onAppear {
+                updateContainerBottomInset(proxy.safeAreaInsets.bottom)
+            }
+            .onChange(of: proxy.size) { _, _ in
+                updateContainerBottomInset(proxy.safeAreaInsets.bottom)
+            }
+            .onChange(of: proxy.safeAreaInsets.bottom) { _, inset in
+                updateContainerBottomInset(inset)
+            }
         }
         .sheet(isPresented: $showDrawer) {
             WorkspaceDrawer(store: workspaceStore) { workspaceId, surfaceId in
@@ -140,17 +167,8 @@ struct WorkspaceView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
             updateKeyboardHeight(from: notification)
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidChangeFrameNotification)) { notification in
-            updateKeyboardHeight(from: notification)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
-            updateKeyboardHeight(from: notification)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { notification in
-            updateKeyboardHeight(from: notification)
-        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            keyboardHeight = 0
+            updateKeyboardHeight(0)
         }
         .onChange(of: selectedPhotoItem) { _, item in
             guard let item else { return }
@@ -160,14 +178,18 @@ struct WorkspaceView: View {
 
     private func updateKeyboardHeight(from notification: Notification) {
         guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-        let overlap: CGFloat
         if let window = keyWindow {
             let frameInWindow = window.convert(frame, from: nil)
-            overlap = window.bounds.intersection(frameInWindow).height
+            // A floating iPad keyboard does not obstruct the lower edge. Treat
+            // it as no bottom inset instead of needlessly moving the composer.
+            let isDockedToBottom = frameInWindow.maxY >= window.bounds.maxY - 1
+            let overlap = isDockedToBottom
+                ? max(0, window.bounds.maxY - frameInWindow.minY)
+                : 0
+            updateKeyboardHeight(overlap)
         } else {
-            overlap = UIScreen.main.bounds.intersection(frame).height
+            updateKeyboardHeight(UIScreen.main.bounds.intersection(frame).height)
         }
-        updateKeyboardHeight(overlap)
     }
 
     private func updateKeyboardHeight(_ nextHeight: CGFloat) {
@@ -176,6 +198,19 @@ struct WorkspaceView: View {
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             keyboardHeight = nextHeight
+        }
+    }
+
+    private func updateContainerBottomInset(_ fallbackInset: CGFloat) {
+        // Once the keyboard is visible, SwiftUI changes this value to include
+        // the keyboard itself. UIWindow keeps the physical container inset, so
+        // prefer it and preserve that idle value until the keyboard is dismissed.
+        let nextInset = keyWindow?.safeAreaInsets.bottom ?? fallbackInset
+        guard keyboardHeight <= 0.5, abs(containerBottomInset - nextInset) > 0.5 else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            containerBottomInset = nextInset
         }
     }
 

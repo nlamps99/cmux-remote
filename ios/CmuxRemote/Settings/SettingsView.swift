@@ -8,9 +8,10 @@ struct SettingsView: View {
     let onReconnect: () -> Void
     let onTerminalPreferencesChanged: () -> Void
     var onTriggerTestNotification: (@MainActor () -> TestNotificationResult)? = nil
-    @AppStorage("cmux.connectionMode") private var connectionModeRaw: String = ConnectionMode.direct.rawValue
+    @AppStorage("cmux.transportPreference") private var transportPreferenceRaw: String = TransportPreference.direct.rawValue
     @AppStorage("cmux.host") private var host: String = ""
     @AppStorage("cmux.port") private var port: Int = 4399
+    @AppStorage("cmux.lanPairingCode") private var lanPairingCode: String = ""
     @AppStorage("cmux.brokerURL") private var brokerURL: String = ""
     @AppStorage("cmux.relayId") private var relayId: String = ""
     @AppStorage("cmux.pairingCode") private var pairingCode: String = ""
@@ -154,17 +155,24 @@ struct SettingsView: View {
         section(title: "connection") {
             VStack(alignment: .leading, spacing: CmuxSpacing.lg) {
                 labelRow("mode", color: CmuxTheme.muted)
-                Picker(L10n.string("Connection mode"), selection: connectionModeBinding) {
-                    ForEach(ConnectionMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
+                Picker(L10n.string("Connection mode"), selection: transportPreferenceBinding) {
+                    ForEach(TransportPreference.allCases) { preference in
+                        Text(preference.displayName).tag(preference)
                     }
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("ConnectionModePicker")
 
-                if connectionMode == .direct {
+                if transportPreference == .auto {
+                    Text(L10n.string("Uses the Mac's LAN address when it answers on this Wi-Fi, and the server otherwise."))
+                        .cmuxCaption()
+                        .foregroundStyle(CmuxTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if transportPreference != .broker {
                     labelRow("host", color: CmuxTheme.muted)
-                    TextField("100.x.x.x or mac.tailnet.ts.net", text: $host)
+                    TextField("192.168.x.x, mac.local, or 100.x.x.x", text: $host)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .cmuxInputStyle()
@@ -173,7 +181,23 @@ struct SettingsView: View {
                     Stepper(value: $port, in: 1024...65535) {
                         Text(String(port)).cmuxHeadline().foregroundStyle(CmuxTheme.primary)
                     }
-                } else {
+
+                    // A tailnet host proves its identity to the relay through
+                    // Tailscale, so it needs no code. A LAN address cannot, and
+                    // pairs with relay.json's lan.pairing_code instead.
+                    if EndpointPolicy.isPrivateLANHost(host) {
+                        labelRow("lan pairing code", color: CmuxTheme.muted)
+                        SecureField(L10n.string("relay.json lan.pairing_code"), text: $lanPairingCode)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .cmuxInputStyle().accessibilityIdentifier("LANPairingCodeField")
+                        Text(L10n.string("LAN traffic is not encrypted. Use it only on a network you trust."))
+                            .cmuxCaption()
+                            .foregroundStyle(CmuxTheme.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if transportPreference != .direct {
                     labelRow("server url", color: CmuxTheme.muted)
                     TextField("https://relay.example.com", text: $brokerURL)
                         .textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
@@ -186,7 +210,9 @@ struct SettingsView: View {
                     SecureField(L10n.string("One-time pairing secret"), text: $pairingCode)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .cmuxInputStyle().accessibilityIdentifier("PairingCodeField")
+                }
 
+                if transportPreference != .direct {
                     Button {
                         pairingScanConfirmation = nil
                         showPairingScanner = true
@@ -211,6 +237,14 @@ struct SettingsView: View {
                 HStack(spacing: CmuxSpacing.sm) {
                     Circle().fill(color(for: store.connection)).frame(width: 7, height: 7)
                     Text(label(store.connection)).cmuxCaption().foregroundStyle(CmuxTheme.muted)
+                    if let transport = store.activeTransport, store.connection == .connected {
+                        Text(transport.shortLabel)
+                            .cmuxMono(10)
+                            .foregroundStyle(
+                                transport.isPlaintext ? CmuxTheme.warning : CmuxTheme.muted
+                            )
+                            .accessibilityIdentifier("SettingsTransportBadge")
+                    }
                     Spacer()
                 }
 
@@ -239,11 +273,27 @@ struct SettingsView: View {
     /// reconnect on its own: the user still confirms with SAVE & RECONNECT, so a
     /// mis-scan cannot silently replace a working configuration.
     private func apply(_ payload: PairingPayload) {
-        connectionModeRaw = ConnectionMode.broker.rawValue
         brokerURL = payload.serverURL
         relayId = payload.relayId
         pairingCode = payload.pairingCode
-        pairingScanConfirmation = L10n.format("scanned %@ — tap save & reconnect", payload.relayId)
+        if payload.hasLAN,
+           let lanURL = payload.lanURL,
+           let components = URLComponents(string: lanURL),
+           let scannedHost = components.host,
+           !scannedHost.isEmpty
+        {
+            host = scannedHost
+            port = components.port ?? 4399
+            lanPairingCode = payload.lanPairingCode ?? ""
+            transportPreferenceRaw = TransportPreference.auto.rawValue
+            pairingScanConfirmation = L10n.format(
+                "scanned %@ with LAN fallback — tap save & reconnect",
+                payload.relayId
+            )
+        } else {
+            transportPreferenceRaw = TransportPreference.broker.rawValue
+            pairingScanConfirmation = L10n.format("scanned %@ — tap save & reconnect", payload.relayId)
+        }
     }
 
     private var demoSettings: some View {
@@ -499,14 +549,14 @@ struct SettingsView: View {
             .foregroundStyle(color)
     }
 
-    private var connectionMode: ConnectionMode {
-        ConnectionMode(rawValue: connectionModeRaw) ?? .direct
+    private var transportPreference: TransportPreference {
+        TransportPreference(rawValue: transportPreferenceRaw) ?? .direct
     }
 
-    private var connectionModeBinding: Binding<ConnectionMode> {
+    private var transportPreferenceBinding: Binding<TransportPreference> {
         Binding(
-            get: { connectionMode },
-            set: { connectionModeRaw = $0.rawValue }
+            get: { transportPreference },
+            set: { transportPreferenceRaw = $0.rawValue }
         )
     }
 
@@ -514,17 +564,18 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: CmuxSpacing.md) {
             CmuxRule(title: L10n.string("tutorial"))
             VStack(alignment: .leading, spacing: CmuxSpacing.md) {
-                if connectionMode == .direct {
+                switch transportPreference {
+                case .direct:
                     GuideStep(number: 1,
-                              title: "Turn on cmux and Tailscale on your Mac.",
-                              detail: "Your iPhone and Mac must be on the same tailnet.")
-                    GuideStep(number: 2,
-                              title: "Run the relay in Terminal on your Mac.",
+                              title: "Turn on cmux and the relay on your Mac.",
                               detail: "swift run cmux-relay serve --config ~/.cmuxremote/relay.json")
+                    GuideStep(number: 2,
+                              title: "Pick how the phone reaches the Mac.",
+                              detail: "A tailnet address needs Tailscale; a LAN address needs lan.pairing_code.")
                     GuideStep(number: 3,
-                              title: "Enter the Tailscale host and port.",
-                              detail: "Use a 100.x IP or tailnet DNS; the port is usually 4399.")
-                } else {
+                              title: "Enter that host and port.",
+                              detail: "The port is usually 4399.")
+                case .broker:
                     GuideStep(number: 1,
                               title: "Run the Broker and HTTPS on your VPS.",
                               detail: "broker/docker-compose.yml starts Caddy TLS too.")
@@ -534,6 +585,16 @@ struct SettingsView: View {
                     GuideStep(number: 3,
                               title: "Enter the Server URL, Relay ID, and Pairing Code.",
                               detail: "A public server URL must start with https://.")
+                case .auto:
+                    GuideStep(number: 1,
+                              title: "Set relay.json transport to both.",
+                              detail: "Add a lan.pairing_code block alongside the broker block.")
+                    GuideStep(number: 2,
+                              title: "Run cmux-relay pair on the Mac.",
+                              detail: "The QR then carries the LAN address and the server together.")
+                    GuideStep(number: 3,
+                              title: "Scan it, or fill both sections by hand.",
+                              detail: "The phone probes the LAN address first and falls back to the server.")
                 }
                 GuideStep(number: 4,
                           title: "Save, then tap reconnect.",

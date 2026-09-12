@@ -1,4 +1,4 @@
-[🇰🇷 한국어](README.md) · 🇺🇸 English · [🇨🇳 简体中文](README.zh-CN.md)
+[🇰🇷 한국어](README.ko.md) · 🇺🇸 English · [🇨🇳 简体中文](README.md)
 
 # cmux Remote
 
@@ -587,7 +587,7 @@ multi-user sharing, server-side persistence beyond the live session.
 
 ```
 cmux-remote/
-├─ README.md / README.en.md
+├─ README.md / README.en.md / README.ko.md
 ├─ LICENSE
 ├─ docs/
 │  ├─ screenshots/          # README assets

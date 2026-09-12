@@ -1,114 +1,118 @@
-🇰🇷 한국어 · [🇺🇸 English](README.en.md) · [🇨🇳 简体中文](README.zh-CN.md)
+[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](README.en.md) · 🇨🇳 简体中文
 
 # cmux Remote
 
-> Tailscale 또는 직접 운영하는 VPS를 통해 [cmux](https://github.com/manaflow-ai/cmux)
-> 터미널을 iPhone / Android 폰으로 조작하는 비공식 원격 클라이언트.
+> 通过 Tailscale 或自建 VPS，用 iPhone 或 Android 手机操作 Mac 上
+> [cmux](https://github.com/manaflow-ai/cmux) 终端的非官方远程客户端。
 
-cmux Remote는 Mac에서 돌아가는 cmux의 작업공간과 터미널을 폰에서
-읽고 조작할 수 있게 해주는 앱 + Swift 데몬 묶음입니다 — iPhone은 SwiftUI,
-Android는 Kotlin + Jetpack Compose 클라이언트. Direct
-모드는 Tailscale을 사용하고, 선택형 Server 모드는 폰과 Mac이 사용자가
-운영하는 VPS Broker에 TLS로 각각 outbound 연결합니다.
+cmux Remote 是一套手机应用 + Swift 守护进程的组合，让你在 iPhone
+（SwiftUI）或 Android 手机（Kotlin + Jetpack Compose）上读取和操作
+Mac 上 cmux 里运行的终端。Direct 模式走你的 Tailscale tailnet；
+可选的 Server 模式让手机和 Mac 各自通过 TLS 主动连接到你自己控制的
+VPS Broker。
 
-> **폰에 Tailscale을 설치하지 않는 방법:**
-> [자체 호스팅 Broker 가이드](broker/README.md)를 참고하세요. Server 모드는
-> TLS를 사용하지만 E2E 암호화는 아니므로 Broker가 중계 프레임을 볼 수 있습니다.
+> **不想在手机上装 Tailscale：** 参考
+> [自建 Broker 指南](broker/README.md)。Server 模式有 TLS 保护，但**不是**
+> 端到端加密——Broker 能看到中转的终端帧。
 
-이 프로젝트는 **Manaflow가 만들거나 공식 지원하는 결과물이 아닙니다.**
-cmux와 문서화된 JSON-RPC 프로토콜로만 통신하는 독립 네트워크 클라이언트.
+本项目是社区作品，**并非** Manaflow 制作或官方支持。cmux Remote 是一个
+独立的网络客户端，只通过已公开文档的 JSON-RPC 协议与 cmux 通信。
 
 ---
 
-## 이번 업데이트 — v1.0.6
+## 本次更新 — v1.0.6
 
 <p align="center">
-  <img src="docs/launch-assets/source/cmux-remote-brandmark-transparent.png" alt="cmux Remote 브랜드마크" width="320">
+  <img src="docs/launch-assets/source/cmux-remote-brandmark-transparent.png" alt="cmux Remote 品牌标识" width="320">
 </p>
 
-v1.0.5 이후 새로 추가되거나 바뀐 점:
+相比 v1.0.5 的新增与变更：
 
-- 🤖 **Android 클라이언트 (신규)** — `android/`에 Kotlin + Jetpack Compose 네이티브 클라이언트를 추가했습니다(**Google Play 서비스 불필요**): QR 스캔 페어링, 워크스페이스/surface 관리, ANSI 터미널 미러링, CMD/LIVE 입력 패널과 단축키, 이벤트 Inbox — iOS와 같은 4탭 셸(Workspaces / Active / Inbox / Settings).
-- 🔔 **네이티브 푸시 알림 (APNs)** — cmux 이벤트와 Claude/Codex 계열 `needs input` 프롬프트를 relay가 APNs로 직접 보냅니다. relay에 `apns` 블록을 설정하면 앱이 백그라운드·종료 상태여도 배너가 도착하고, 설정하지 않으면 기존 로컬 알림으로 자동 폴백합니다.
-- ⌨️ **Ctrl-C 단축키** — 실행 중인 명령을 끊을 수 있도록 터미널 키보드 바에 전용 Ctrl-C 키를 추가했습니다.
-- 🖼️ **App Store 스크린샷 5장 전체 교체** — 최신 워크스페이스 · 터미널 · 키보드 · Inbox · 설정 화면을 반영했습니다.
+- 🤖 **Android 客户端（新）** — `android/` 目录新增原生客户端（Kotlin +
+  Jetpack Compose，**不依赖 Google Play 服务**）：扫码配对、工作区 /
+  surface 管理、ANSI 终端镜像、CMD/LIVE 输入面板、快捷键行与事件 Inbox，
+  界面结构与 iOS 版一致（底部四个 Tab：Workspaces / Active / Inbox /
+  Settings）。
+- 🔔 **原生推送通知（APNs）** — relay 通过 APNs 投递 cmux 事件和 Claude/Codex 风格的 `needs input` 提示。在 relay 上配置 `apns` 块后，即使应用被切到后台或已被杀掉也能收到横幅；不配置则回落到现有的本地通知。
+- ⌨️ **Ctrl-C 快捷键** — 终端键盘条上新增独立的 Ctrl-C 键，用于中断正在运行的命令。
+- 🖼️ **五张 App Store 截图全部更新** — 工作区、终端、键盘、Inbox 和设置页的最新界面。
 
 <table>
   <tr>
-    <td align="center" width="20%"><img src="docs/launch-assets/screenshots/app-store-6.9/01-workspaces-remote-control.png" alt="작업공간 원격 제어" width="180"><br><sub>작업공간 / surface 칩바</sub></td>
-    <td align="center" width="20%"><img src="docs/launch-assets/screenshots/app-store-6.9/02-terminal-live-control.png" alt="터미널 실시간 제어" width="180"><br><sub>터미널 실시간 미러링</sub></td>
-    <td align="center" width="20%"><img src="docs/launch-assets/screenshots/app-store-6.9/03-keyboard-shortcuts.png" alt="키 액세서리 바" width="180"><br><sub>키 액세서리 바 · Ctrl-C</sub></td>
-    <td align="center" width="20%"><img src="docs/launch-assets/screenshots/app-store-6.9/04-inbox-notifications.png" alt="알림 Inbox" width="180"><br><sub>알림 Inbox · 푸시</sub></td>
-    <td align="center" width="20%"><img src="docs/launch-assets/screenshots/app-store-6.9/05-settings-connection-guide.png" alt="설정 / 연결" width="180"><br><sub>설정 · 페어링 가이드</sub></td>
+    <td align="center" width="20%"><img src="docs/launch-assets/screenshots/app-store-6.9/01-workspaces-remote-control.png" alt="工作区远程控制" width="180"><br><sub>工作区 / surface 芯片条</sub></td>
+    <td align="center" width="20%"><img src="docs/launch-assets/screenshots/app-store-6.9/02-terminal-live-control.png" alt="终端实时控制" width="180"><br><sub>实时终端镜像</sub></td>
+    <td align="center" width="20%"><img src="docs/launch-assets/screenshots/app-store-6.9/03-keyboard-shortcuts.png" alt="按键辅助条" width="180"><br><sub>按键辅助条 · Ctrl-C</sub></td>
+    <td align="center" width="20%"><img src="docs/launch-assets/screenshots/app-store-6.9/04-inbox-notifications.png" alt="Inbox 通知" width="180"><br><sub>通知 Inbox · 推送</sub></td>
+    <td align="center" width="20%"><img src="docs/launch-assets/screenshots/app-store-6.9/05-settings-connection-guide.png" alt="设置 · 配对" width="180"><br><sub>设置 · 配对引导</sub></td>
   </tr>
 </table>
 
-> 1.0.5 이하 변경 내역은 아래 **변경 이력** 참고.
+> v1.0.5 及更早版本的变更见下方 **变更历史**。
 
 ---
 
-## 상태
+## 当前状态
 
-**얼리 프리뷰 (v1.0.6).** 다음이 됩니다:
+**早期预览（v1.0.6）。** 已经可以：
 
-- cmux 작업공간 / surface 목록 보기, 생성, 이름 변경, 닫기
-- 임의의 터미널 surface를 실시간 미러링 (15Hz diff 폴링, 120줄 bounded history)
-- 키 입력 / 키 조합 / 텍스트 / 커맨드 라인 / LIVE 즉시 입력 전송 · Ctrl-C 단축키
-- iPhone 클립보드 붙여넣기 + 사진 첨부 경로 삽입
-- 연결된 MacBook 배터리 상태 표시
-- cmux 알림과 Claude/Codex 계열 `needs input` 이벤트를 iOS Inbox + 로컬 알림 또는 APNs 푸시로 표시
-- 입력 패널을 화면 하단에 붙이고, 가려진 터미널 줄을 끌어올릴 수 있도록 하단 스크롤 여유 추가
-- 마우스 모드 TUI 탭 입력 (Textual / Bubble Tea / fzf / omx 등)
-- pane 포커스 자동 고정 + 이전 pane 토글
+- 列出、打开、创建、重命名、关闭 cmux 工作区和 surface
+- 近实时镜像任意终端 surface（15 Hz 差分轮询，120 行有界历史）
+- 发送按键、组合键、原始文本、命令行和逐字符实时输入，并有独立的 Ctrl-C 快捷键
+- 把 cmux 通知呈现在 Inbox 里作为 iOS 本地通知，或在 relay 配置了 `apns` 块时作为 APNs 推送
+- 把 iPhone 剪贴板文本粘贴进命令编辑框
+- 附加 iPhone 照片：保存到 Mac 的 `~/Downloads/cmux-remote/` 下并插入保存路径
+- 在工作区标题栏显示已连接 MacBook 的电池状态
+- 把 Claude/Codex 风格的 `needs input` 事件呈现在 Inbox 里
+- 让终端输入面板贴紧底部边缘，并留出额外滚动空间以便看到被遮住的终端行
+- 每次发送前重新固定 cmux pane 焦点
 
-macOS 14 + iOS 17 실기기 + 시뮬레이터에서 같은 Wi-Fi와 Tailnet
-환경에서 스모크 테스트했습니다 (Tailscale 1.84+).
+已在 macOS 14 + iOS 17 上完成冒烟测试，涵盖局域网和跨 Tailnet
+（Tailscale 1.84+）、模拟器和真机 iPhone。
 
-> **알림 전달** — 1.0.6부터 relay에 `apns` 블록을 설정하면 앱이 종료/장시간
-> 백그라운드 상태여도 APNs 푸시로 배너가 도착합니다. APNs를 설정하지 않으면
-> 기존처럼 앱이 foreground이거나 백그라운드에서 WebSocket이 살아있는 동안만
-> 뜨는 로컬 알림으로 동작합니다. (아래 **설정**의 `apns` 블록 참고.)
-
----
-
-## 변경 이력
-
-> 최근 변경을 최신순으로 요약합니다. 형식: `날짜 · 버전/범위 · 요약`.
-> 범위 — `app`(iOS 앱) · `relay`(Mac 데몬) · `setup`(설치/문서).
-> 버전별 App Store 상세 노트는
-> [`docs/launch-assets/release-notes/`](docs/launch-assets/release-notes/)에 있습니다.
-
-- **2026-06-23 · v1.0.6 (app + relay)** — 네이티브 APNs 푸시 알림(relay `apns` 블록 설정 시 앱 종료 상태에도 배너 도착, 미설정 시 로컬 알림 폴백), 터미널 키보드 바 Ctrl-C 단축키, App Store 6.9" 스크린샷 5장 전체 교체.
-- **2026-06-06 · relay** — cmux 1.0.5가 Unix 소켓을 `~/Library/Application Support/cmux`에서 `~/.local/state/cmux`로 이전한 것에 대응. `cmuxSocketPath()`가 마커를 최신순(`/tmp/cmux-last-socket-path` → `~/.local/state/cmux/last-socket-path` → 레거시 Application Support)으로 추적하고, 없으면 `~/.local/state/cmux/cmux.sock`로 폴백. **iOS 앱 무변경 → App Store 재제출 불필요.**
-- **2026-06-05 · v1.0.5 (app)** — LIVE 즉시 입력 모드(문자 단위 즉시 전송), 한글 IME 보호(조합 중 자모 분리 방지), 입력 패널 하단 flush, 터미널 하단 스크롤 여유 5줄, `needs input` Inbox 커버리지 개선.
-- **2026-06-05 · setup** — relay 설치 스크립트 foolproof화 + 연결 가이드(`docs/connection-guide.md`) 추가.
-- **2026-05-29 · v1.0.4 (app)** — 파싱 row/style run 캐싱으로 터미널 렌더링 가속, 120줄 bounded history, 256색/트루컬러 ANSI, checksum 정합 개선.
-- **2026-05-28 · v1.0.3 (relay)** — cmux가 소켓을 rotation할 때 stale 소켓을 붙잡아 "Connection refused"가 반복되던 문제 수정, 재설치 시 기본 동적 소켓 탐색, 소켓 경로 회귀 테스트 추가.
-- **2026-05-24 · v1.0.2 (app)** — 모바일 키보드 동작 개선, 작업공간 생성/이름변경/닫기, 이미지 첨부, 연결 컴퓨터 배터리 상태, Inbox 개선.
+> **关于通知投递** — 从 1.0.6 起，在 relay 上配置 `apns` 块即可通过 APNs
+> 投递横幅，应用被杀掉或长时间处于后台时也能收到。不配置 APNs 时通知行为
+> 与以前相同：只在应用处于前台、或仍存活于后台且 WebSocket 未断开时触发
+> 本地横幅。（见 **配置** 一节的 `apns` 块。）
 
 ---
 
-## 왜?
+## 变更历史
 
-cmux는 AI 코딩 에이전트를 굴리기에 훌륭한 Mac 네이티브 터미널이지만,
-책상을 떠나는 순간 모든 진행이 화면 너머로 사라집니다. cmux Remote는
-같은 작업공간에 얇은 유리창을 하나 더 붙여서, 소파에서, 지하철에서,
-카페에서도 Mac이 하고 있는 일을 확인하고 키 입력으로 끼어들 수 있게
-합니다. 일은 여전히 Mac이 다 하고, iPhone은 그저 원격 조종기.
+> 最近的变更，新的在前。格式：`日期 · 版本/范围 · 摘要`。
+> 范围 — `app`（iOS 应用）· `relay`（Mac 守护进程）· `setup`（安装/文档）。
+> 各版本的 App Store 发布说明见
+> [`docs/launch-assets/release-notes/`](docs/launch-assets/release-notes/)。
+
+- **2026-06-23 · v1.0.6（app + relay）** — 原生 APNs 推送通知（relay 配置 `apns` 块后横幅可送达已被杀掉的应用，否则回落到本地通知）、终端键盘条上的独立 Ctrl-C 快捷键，以及五张 App Store 6.9" 截图全部更新。
+- **2026-06-06 · relay** — 跟踪 cmux 迁移后的 socket 路径：cmux 1.0.5 把 Unix socket 从 `~/Library/Application Support/cmux` 移到了 `~/.local/state/cmux`。`cmuxSocketPath()` 现在按最新约定优先的顺序跟随标记文件（`/tmp/cmux-last-socket-path` → `~/.local/state/cmux/last-socket-path` → 旧的 Application Support），最后回落到 `~/.local/state/cmux/cmux.sock`。**iOS 应用无变更 → 无需重新提交 App Store。**
+- **2026-06-05 · v1.0.5（app）** — LIVE 逐字符输入模式、韩语/谚文 IME 保护（不再拆散字母）、输入面板贴底、终端额外五行滚动空间、改进 `needs input` 的 Inbox 覆盖。
+- **2026-06-05 · setup** — 傻瓜式 relay 安装脚本 + 连接指南（`docs/connection-guide.md`）。
+- **2026-05-29 · v1.0.4（app）** — 缓存解析后的行/样式段以加快终端渲染、120 行有界历史、256 色/真彩 ANSI、更好的校验和对齐。
+- **2026-05-28 · v1.0.3（relay）** — 修复 cmux 轮换 socket 时反复出现的 "Connection refused"、重装后默认动态发现 socket、socket 路径回归测试。
+- **2026-05-24 · v1.0.2（app）** — 移动键盘行为、工作区创建/重命名/关闭、图片附件、已连接电脑的电池状态、Inbox 改进。
 
 ---
 
-## 아키텍처
+## 为什么做这个？
+
+cmux 是一款很出色的 Mac 原生终端，很适合配合 AI 编码 agent 使用，但你一
+离开电脑它就成了黑屏。cmux Remote 给你一块薄薄的玻璃窗，让你在沙发上、
+火车上、咖啡馆里也能看到同样那些工作区。所有活儿还是 Mac 在干——iPhone
+只是一个遥控器。
+
+---
+
+## 架构
 
 ```
 iPhone / Android         Tailscale            Mac
 ┌─────────────────────┐                       ┌────────────────────────────────┐
-│ cmux Remote (앱)    │── HTTP + WS ─────────▶│ cmux-relay (Swift, launchd)    │
-│  · 작업공간 목록    │   (Tailscale가 암호화)│  · HTTP/1.1 라우트             │
-│  · 터미널 미러      │                       │  · /v1/stream WebSocket        │
-│  · 액세서리 키바    │◀── events.stream ─────│  · DiffEngine (15Hz 폴링)      │
-│  · 로컬 알림        │                       │  · Tailscale whois 인증        │
-└─────────────────────┘                       │  · 디바이스 토큰 + Rate Limit  │
+│ cmux Remote (app)   │── HTTP + WS ─────────▶│ cmux-relay (Swift, launchd)    │
+│  · 工作区列表        │   (Tailscale 加密)     │  · HTTP/1.1 路由                │
+│  · 终端镜像          │                       │  · /v1/stream WebSocket        │
+│  · 辅助键条          │◀── events.stream ─────│  · DiffEngine (15 Hz 轮询)      │
+│  · 本地通知          │                       │  · Tailscale whois 鉴权         │
+└─────────────────────┘                       │  · 设备令牌 + 限速               │
                                               └─────────────┬──────────────────┘
                                                             │ Unix socket
                                                             │ JSON-RPC
@@ -119,263 +123,299 @@ iPhone / Android         Tailscale            Mac
                                               └────────────────────────────────┘
 ```
 
-Server 모드는 `iPhone -- HTTPS/WSS --> VPS Broker <-- WSS -- Mac relay`
-구조입니다. Mac에는 inbound 포트를 열지 않으며 Direct 모드는 계속 기본값입니다.
+Server 模式的链路是 `手机 -- HTTPS/WSS --> VPS Broker <-- WSS -- Mac relay`。
+Mac 不需要开放任何入站端口，Direct 模式仍是默认。
 
-설치는 두 파트:
+需要装两个东西：
 
-1. **`cmux-relay`** — cmux와 같은 Mac에서 도는 Swift 데몬. cmux의 로컬
-   Unix 소켓에 JSON-RPC로 붙고, tailnet 인터페이스에 HTTP+WebSocket을
-   띄웁니다. TLS는 Tailscale의 WireGuard 전송이 담당.
-2. **cmux Remote (iOS)** — SwiftUI 앱. 사용자 본인의 relay에만 붙고,
-   외부 네트워크로 나가는 호출은 없습니다.
+1. **`cmux-relay`** — 一个跑在 cmux 同一台 Mac 上的小型 Swift 守护进程。
+   它用 JSON-RPC 与 cmux 的本地 Unix socket 通信，并在 tailnet 接口上暴露
+   HTTP + WebSocket API。TLS 由 Tailscale 的 WireGuard 传输层本身提供。
+2. **cmux Remote（iOS / Android）** — 手机上的客户端应用：iOS 是 SwiftUI
+   应用（`ios/`），Android 是 Kotlin + Jetpack Compose 应用
+   （`android/`）。两者都只与你自己的 relay 通信，任何数据都不会离开
+   你的 tailnet / broker。
 
-cmux 소스 코드는 이 저장소에 포함되지 않습니다. 문서화된 JSON-RPC
-스키마로만 cmux와 통신합니다.
+本仓库刻意**不包含**任何 cmux 源代码。它是一个通过已公开文档的 JSON-RPC
+schema 与 cmux 通信的网络客户端。
 
 ---
 
-## 기능
+## 功能
 
-### 작업공간 / surface
+### 工作区 / surface
 
-- 작업공간 / 터미널 surface 목록
-- **여러 cmux 윈도우 지원** — cmux의 `workspace.list`는 키 윈도우 하나만
-  돌려주므로, 두 번째 윈도우의 작업공간은 예전에는 앱에서 아예 보이지
-  않았습니다. `window.list`로 윈도우를 열거하고 `window_id`로 범위를
-  지정합니다. 윈도우가 둘 이상일 때만 목록 위에 스위처가 나타납니다.
-- 워크스페이스 생성 시 입력한 제목을 cmux `workspace.create`의 `title`로 반영
-- 워크스페이스 이름 변경 (`workspace.rename`) / 닫기 (`workspace.close`)
-- 칩바에서 surface 생성 / 닫기 (확정 다이얼로그 포함)
-- 작업공간 전환 / surface 전환 시 자동 재구독 + 하단 자동 스크롤
-- 첫 RPC 게이트 (`CMUXClient.awaitReady`) — inbound bridge 설치 race 방지
+- 工作区与终端 surface 列表
+- **多 cmux 窗口支持** — cmux 的 `workspace.list` 只返回当前 key 窗口的
+  内容，所以第二个打开的窗口以前在应用里完全看不到。现在用 `window.list`
+  枚举窗口，并用 `window_id` 限定列表范围。只有窗口多于一个时才显示切换器。
+- 创建工作区时把输入的标题作为 cmux `workspace.create` 的 `title` 传入
+- 在工作区列表里重命名（`workspace.rename`）/ 关闭（`workspace.close`）
+- 在芯片条里创建 / 关闭 surface（带确认对话框和自动回退选择）
+- 切换工作区 / surface 时自动重新订阅并滚动到底部
+- 首个 RPC 门控（`CMUXClient.awaitReady`），确保入站桥接装好后才发出调用
 
-### 터미널 미러
+### 终端镜像
 
-- 15Hz diff 폴링 + 풀텍스트 fallback + checksum reconcile
-- 120줄 bounded history로 surface 전환/새로고침 시 갑작스러운 24줄 축소 완화
-- 입력 액세서리에 가려진 줄을 완전히 볼 수 있도록 터미널 하단 5행 스크롤 여유 추가
-- 렌더 row/style-run 캐시 + Canvas run 단위 그리기로 대형 화면에서도 빠른 스크롤/줌 유지
-- Tokyo Night Storm ANSI 팔레트, 256색/truecolor ANSI 렌더링 준비 + CRT 스캔라인 셰이더
-- 동아시아 와이드 글리프 폭 계산
-- iOS 컬러 이모지 자동 승격 차단 (●, ⏺, ✔, ▶ 등에 VS-15 적용)
+- 15 Hz 差分轮询 + 全文回落 + 基于校验和的对齐
+- 120 行有界历史，避免切换 surface / 刷新时突然缩到 24 行
+- 底部额外五行滚动空间，让被输入辅助条遮住的行能完整拉出来查看
+- 缓存渲染行和样式段，按段批量走 Canvas 绘制，让大屏下的滚动和缩放更快
+- Tokyo Night Storm 配色、ANSI 256 色 / 真彩渲染基础，以及 CRT 扫描线着色器
+- 正确计算东亚宽字形的单元格宽度
+- 阻止 iOS 把 ● ⏺ ✔ ▶ 这类字形自动升格成彩色 emoji
+  （用 Variation Selector-15 加一张小的替换表）
 
-### 입력
+### 输入
 
-- 액세서리 바: `esc` `OK` `/` `$` `tab` `← ↑ ↓ →` `/new` `space`
-- **LIVE 입력 모드** — 제출 버튼 없이 글자 단위로 즉시 터미널 전송
-- 키보드 닫기 / 백스페이스 / iPhone 클립보드 붙여넣기 / 사진 첨부 버튼
-- 커맨드 컴포저 — 텍스트 입력 + 엔터 묶음 전송, 전송 후 키보드 자동 닫힘
-- 한글 IME 입력은 LIVE 즉시 전송에서 제외해 자모가 분리되지 않도록 로컬 조합 유지
-- 사진 첨부는 iPhone 이미지를 Mac의 `~/Downloads/cmux-remote/`로 저장하고
-  입력창에 저장 경로를 삽입
-- `surface.send_key`는 `NSEvent` synth — 화살표/Ctrl 조합 등 멀티바이트
-  시퀀스가 atomic하게 전달. Ink 기반 TUI (Claude Code 등)의 ESC 파서
-  타임아웃 문제 해결.
-- **포커스 게이트** — 구독 / 재구독 / 매 sendKey 직전 `surface.focus`
-  자동 호출. 책상에서 cmux 포커스를 옮긴 뒤에도 iPhone 키가 의도한
-  surface로 도착.
+- 辅助键条：`esc` `OK` `/` `$` `tab` `← ↑ ↓ →` `/new` `space`
+- **LIVE 输入模式** — 不按提交键，逐字符即时发送到终端
+- 独立的收起键盘、退格、iPhone 剪贴板粘贴和照片附加按钮
+- 命令编辑框把文本 + 回车作为一次发送；软键盘在提交后自动收起
+- 韩语/谚文 IME 文本不进入 LIVE 即时发送模式，避免组合中的音节被拆成字母
+- 照片附件由 Mac relay 保存在 `~/Downloads/cmux-remote/` 下，然后把保存
+  路径插入命令输入框
+- `surface.send_key` 在 Mac 侧通过 `NSEvent` 合成事件投递，所以多字节序列
+  （方向键、ctrl 组合键）会原子到达——这对基于 Ink 的 TUI（Claude Code
+  等）很重要，它们的 ESC 解析器只要序列剩余部分晚几毫秒就会对单独的 ESC
+  字节做出反应。
+- **焦点门控** — 每次订阅、重新订阅和每次 `sendKey` 都会先重新固定
+  `surface.focus`。即使 Mac 那边焦点移动过，iPhone 的按键也会落在你想要的
+  surface 上。
 
-### 알림
+### 通知
 
-- cmux events.stream의 notification을 iOS 로컬 알림으로 표시
-  (`UNUserNotificationCenter`, threadIdentifier로 작업공간별 그룹핑)
-- 권한은 lazy 요청, 부팅 시 한 번 prewarm
-- 중복 ID 가드 — 재연결로 같은 알림이 두 번 와도 한 번만 배너
-- Inbox 화면 — 최근 200건 보관, 가장 최근 먼저
-- Claude/Codex 계열 `needs input`, `needs attention`, 승인 요청 이벤트를 일반 cmux 알림과 같은 Inbox 항목으로 승격
-- relay에 `apns` 블록을 설정하면 cmux 이벤트와 `needs input`을 APNs 푸시로 전달 — 앱이 종료된 상태에도 도달, 미설정 시 로컬 알림 폴백
-- 딥링크 `cmux://surface/<id>` 처리 (푸시 페이로드 딥링크 자동 오픈은 v1.1 예정)
-- Settings의 `SEND TEST NOTIFICATION` 버튼 — 로컬 inject 즉시 확인 +
-  relay→cmux→events.stream 라운드트립 별도 상태 라인
+- 通过 `UNUserNotificationCenter` 把 cmux 的 `events.stream` 通知呈现为
+  iOS 本地通知，并用 `threadIdentifier` 按工作区分组
+- 权限按需申请，在应用启动时预热一次
+- 重复 id 防护 — 重连后重复推送同一条通知只会触发一次横幅
+- Inbox 视图保留最近 200 条（新的在前）
+- Claude/Codex 风格的 `needs input`、`needs attention` 和审批事件被提升到
+  同一个 Inbox 流里
+- 配置了 `apns` 块后，cmux 事件 / `needs input` 会作为 APNs 推送投递
+  （能送达已被杀掉的应用）；不配置则 Inbox 回落到本地通知
+- 深链 `cmux://surface/<id>`（基于 payload 的深链自动跳转计划在 v1.1）
+- 设置里的 `SEND TEST NOTIFICATION` 按钮：本地注入用于立即确认
+  Inbox/横幅，另有一行独立状态显示 relay→cmux→events.stream 的往返情况
 
 ### Mac relay
 
-- HTTP/1.1 + WebSocket upgrade (`SwiftNIO`)
-- JSON-RPC 2.0 dispatch
-- DiffEngine — actor 기반, per-device FPS 예산, row 단위 diff
-- 인증: Tailscale UDS `whois` (foreground) / GUI fallback
-- 디바이스 토큰: hashed bearer, 메뉴바에서 개별 revoke
-- per-device rate limiter + boot_id 기반 reset 브로드캐스트
-- launchd 유저 에이전트로 자동 시작, PATH 주입으로 `tailscale` CLI 발견
-- MacBook 배터리 상태 조회 (`host.battery`) 및 iPhone 헤더 배지 표시
-- iPhone 사진 업로드를 Mac의 `~/Downloads/cmux-remote/` 안에만 저장 (`file.upload`)
-- events.stream 전용 cmux UDS 채널 분리 (구독 채널은 push-only lock)
-- APNs 푸시 fanout (`APNsProvider`) — 디바이스 토큰별 알림 전송, relay에 `apns` 미설정 시 비활성
+- HTTP/1.1 加 WebSocket 升级（`SwiftNIO`）
+- JSON-RPC 2.0 分发
+- DiffEngine — 基于 actor、按设备的 FPS 预算、行粒度差分
+- 通过 Tailscale UDS `whois` 鉴权（前台服务），带 GUI 回落
+- 每设备一个哈希后的 bearer 令牌，可从菜单栏单独吊销
+- 按设备限速，以及由 `boot_id` 驱动的重置广播
+- 以 launchd 用户代理形式分发，并注入 `PATH`，使 `tailscale` CLI 在被精简
+  过的 launchd 环境里仍可访问
+- 通过 `host.battery` 查询已连接 Mac 的电池状态，在 iPhone 标题栏显示为角标
+- iPhone 照片上传通过 `file.upload` 仅保存在 `~/Downloads/cmux-remote/` 下
+- 事件流使用独立的 cmux UDS 通道（已订阅的通道变为只推送，不再接受后续
+  RPC 响应）
+- APNs 推送扇出（`APNsProvider`）— 按设备令牌投递，未配置 `apns` 块时禁用
 
-### 보안
+### 安全
 
-- Relay는 0.0.0.0에 바인딩하되 비-Tailscale 소스 주소를 *애플리케이션
-  레이어*에서 거부 (`EndpointPolicy`)
-- 디바이스별 토큰 + 메뉴바 revoke
-- 알림 페이로드에는 터미널 내용 미포함 (작업공간/surface id + 짧은
-  제목만)
-- 텔레메트리 없음, 분석 없음, 서드파티 네트워크 호출 없음
-
----
-
-## 요구사항
-
-### Mac (relay)
-
-- macOS 13 Ventura 이상
-- [cmux](https://github.com/manaflow-ai/cmux) 설치 + 소켓 노출
-  (기본 `~/.local/state/cmux/cmux.sock`)
-- Swift 5.10 툴체인 (Xcode 15.3+) — 소스에서 빌드용
-- Direct 모드는 Tailscale 로그인, Server 모드는 자체 호스팅 Broker 필요
-- Direct 모드는 빈 TCP 포트(기본 `4399`), Broker 전용 모드는 포트 불필요
-
-### 폰
-
-- **iPhone**: iOS 17 이상 + 사이드로딩용 Apple Developer 계정
-  (개인 무료 7일 인증서로도 가능)
-- **Android**: Android 8.0 (API 26) 이상. Android Studio 또는
-  Gradle 8.x + JDK 17로 빌드. Google Play 서비스 불필요 — QR 스캔은
-  ZXing 기반.
-- Direct 모드는 Mac과 같은 Tailnet, Server 모드는 폰에 VPN 불필요
-
-### 네트워크
-
-- Direct: 양쪽 Tailscale 1.84+, Funnel/공개 도메인 불필요
-- Server: VPS와 신뢰할 수 있는 HTTPS 인증서가 연결된 DNS 이름 필요
+- relay 绑定 `0.0.0.0`，但在应用层拒绝非 Tailscale 来源地址
+  （`EndpointPolicy`）
+- 每设备令牌，可从菜单栏吊销
+- 通知负载从不包含终端内容——只有工作区/surface id 和一个简短标题
+- 无遥测、无分析、无第三方网络调用
 
 ---
 
-## 빠른 시작
+## 环境要求
 
-> **연결이 안 되나요?** 처음 설치하거나 "연결할 수 없음"이 뜨면
-> 누구나 따라 할 수 있는 단계별 설치 + 문제 해결 안내를 보세요 →
-> **[연결 가이드 (docs/connection-guide.md)](docs/connection-guide.md)**
+### Mac（运行 relay）
 
-### 0. 시작 전 체크 (Mac)
+- macOS 13 Ventura 或更新
+- 一个可用的 [cmux](https://github.com/manaflow-ai/cmux) 安装，且已暴露
+  Unix socket（默认 `~/.local/state/cmux/cmux.sock`）
+- 从源码构建需要 Swift 5.10 工具链（Xcode 15.3+）
+- Direct 模式需要已安装并登录的 Tailscale，或者自建 Broker
+- Direct 模式需要一个空闲 TCP 端口（`4399`）；纯 Broker 模式不需要
 
-relay는 cmux가 도는 그 Mac에서 함께 돌아야 합니다. 아래 3가지를 먼저 확인하세요:
+### iPhone
+
+- iOS 17 或更新
+- Direct 模式下需与 Mac 在同一 Tailnet；Server 模式下手机不需要 VPN
+- 侧载需要 Apple 开发者账号（免费的 7 天个人证书够用；上架 App Store
+  需要付费账号）
+
+### Android 手机
+
+- Android 8.0（API 26）或更新
+- **不需要 Google Play 服务**——扫码解码用的是 ZXing，国行/无 GMS 机型可用
+- 用源码构建 APK（见下方「快速开始」），或 `adb install` 已构建的
+  `app-debug.apk`
+
+### 网络
+
+- Direct：两端都需 Tailscale 1.84+；不需要 Funnel 或公网主机名
+- Server：一台 VPS 加一个带受信 HTTPS 的域名，见 `broker/README.md`
+
+---
+
+## 快速开始
+
+> **连不上？** 如果这是首次安装，或者应用提示无法访问你的 Mac，请按这份
+> 任何人都能照做的分步安装 + 排查指南操作 →
+> **[连接指南（docs/connection-guide.md）](docs/connection-guide.md)**
+
+### 0. 开始之前（在 Mac 上）
+
+relay 跑在 cmux 所在的同一台 Mac 上。先确认这三件事：
 
 ```bash
-cmux --version                 # cmux 설치 + 실행 중이어야 함
-tailscale status               # Tailscale 로그인 + 온라인이어야 함
-swift --version                # Swift 5.10+ (Xcode 15.3+) 빌드용
+cmux --version                 # cmux 必须已安装并正在运行
+tailscale status               # Tailscale 必须已登录且在线
+swift --version                # 构建需要 Swift 5.10+（Xcode 15.3+）
 ```
 
-- **cmux가 실행 중**이어야 relay가 소켓에 붙습니다. (꺼져 있으면 `socketMissing`)
-- iPhone과 Mac이 **같은 Tailnet**에 로그인돼 있어야 합니다.
+- **cmux 必须正在运行**，relay 才能连上它的 socket（否则会报
+  `socketMissing`）。
+- 你的 iPhone 和 Mac 必须登录**同一个 Tailnet**。
 
-### 1. Mac에 relay 빌드 + 설치
+### 1. 在 Mac 上构建并安装 relay
 
 ```bash
 git clone https://github.com/NewTurn2017/cmux-remote.git
 cd cmux-remote
 
-# launchd 유저 에이전트로 빌드 + 설치 (로그인 시 자동 시작)
-# 스크립트가 swift build -c release를 알아서 실행합니다.
+# 构建并作为 launchd 用户代理安装（登录时自动启动）。
+# 脚本会自动执行 swift build -c release。
 ./scripts/install-launchd.sh
 ```
 
-설치 스크립트는 릴리스 바이너리를 빌드해 `~/.cmuxremote/bin/`로 복사하고,
-`~/.cmuxremote/relay.json` 기본 설정이 없으면 자동 생성하며,
-`~/Library/LaunchAgents/com.genie.cmuxremote.plist`를 렌더링한 뒤
-서비스를 부트스트랩합니다. 로그는 `~/.cmuxremote/log/`로 떨어집니다.
+安装脚本会构建 release 二进制并复制到 `~/.cmuxremote/bin/`，在
+`~/.cmuxremote/relay.json` 不存在时写入默认配置，渲染
+`~/Library/LaunchAgents/com.genie.cmuxremote.plist`，然后引导启动服务。
+日志落在 `~/.cmuxremote/log/`。
 
-### 2. relay가 떴는지 확인
+### 2. 确认 relay 已启动
 
 ```bash
-# 헬스 체크 — Mac에서 자기 Tailscale IP로 두드리기
+# 健康检查 —— 在 Mac 上访问自己的 Tailscale IP
 curl -s http://$(tailscale ip -4):4399/v1/health
-# {"ok":true,"version":"0.1.0"}   ← 이게 나오면 relay 정상
+# {"ok":true,"version":"0.1.0"}   ← 出现这个说明 relay 正常
 
-# cmux 소켓에도 붙었는지 점검
+# 确认它也连上了 cmux socket
 ./scripts/cmux-probe.sh
 # {"id":"probe-1","result":{...}}
 ```
 
-응답이 없거나 비정상이면 로그부터 봅니다:
+没有响应或者结果不对？先看日志：
 
 ```bash
 tail -n 40 ~/.cmuxremote/log/stderr.log
 ```
 
-`starting cmux-relay on 0.0.0.0:4399` → `listening …` →
-`cmux event stream attached` 3줄이 보이면 정상입니다.
-안 보이면 아래 **연결이 안 될 때** 섹션으로.
+依次出现 `starting cmux-relay on 0.0.0.0:4399` → `listening …` →
+`cmux event stream attached` 就说明正常。否则跳到下方的
+**连接排查**。
 
-### 3. iPhone 페어링
+### 3. 配对手机
 
-먼저 Mac의 주소를 확인하세요:
+先找到 Mac 的地址：
 
 ```bash
-tailscale ip -4          # 예: 100.x.y.z  ← 이 IP를 앱에 입력
-tailscale status         # MagicDNS 이름(예: my-mac)을 쓰고 싶을 때
+tailscale ip -4          # 例如 100.x.y.z  ← 在应用里填这个
+tailscale status         # 想用 MagicDNS 名称（例如 my-mac）时看这个
 ```
 
-iPhone에서 cmux Remote 열기:
-
-1. **Add Mac** 탭
-2. 위에서 확인한 Tailscale IP 또는 MagicDNS 이름 입력, 포트는 `4399`
-3. **Add** — relay가 Tailscale 신원을 확인하고 페어링합니다
-
-relay는 자기 Mac의 tailnet 로그인을 자동으로 허용하므로, iPhone이 같은
-Tailscale 계정이면 보통 추가 설정 없이 바로 붙습니다. 다른 계정이거나
-relay가 태그 노드로 도는 경우에만 아래 **설정**의 `allow_login`에 본인
-로그인을 직접 추가하세요(그 외 로그인은 `403 Forbidden`). 페어링 시
-디바이스별 토큰이 발급되며
-`~/.cmuxremote/bin/cmux-relay devices revoke <id>`로 언제든 해지할 수 있습니다.
-
-#### QR 페어링 (Server 모드)
-
-Server 모드는 서버 URL, relay id, 그리고 `openssl rand -hex 32`로 만들어진
-64자 페어링 코드를 입력해야 합니다. 한 글자만 틀려도 `pairing_rejected`가
-나고, Broker는 페어링 요직을 소스 IP버 분당 5회로 제한하기 때뫬에 오학를
-몇 번 하면 1분간 마혀버립니다. 토이핬 대신 QR로 넘길 수 있습니다:
+#### Android：构建、安装、扫码
 
 ```bash
-# 페어링 코드는 직접 입력합니다 (프롬프트가 나타납니다)
+cd android
+gradle :app:assembleDebug        # 产出 app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+打开应用后点 **Scan QR to pair**，对准 Mac 上 `cmux-relay pair` 打印的
+二维码即可（二维码内容见下方「二维码配对」）。也支持粘贴
+`cmux://pair` 链接和手动填写直连 / Server 字段。
+
+#### iPhone
+
+在 iPhone 上打开 cmux Remote：
+
+1. 点 **Add Mac**
+2. 填入上面查到的 Tailscale IP 或 MagicDNS 名称，端口 `4399`
+3. 点 **Add** —— relay 会解析你的 Tailscale 身份并完成配对
+
+relay 会自动允许自己这台 Mac 的 tailnet 登录名，所以 iPhone 只要在同一个
+Tailscale 账号下，通常不需要额外设置就能连上。只有账号不同、或 relay 跑在
+tag 节点上时，才需要在下方 **配置** 的 `allow_login` 里手动加上你的登录名
+（其他登录名会得到 `403 Forbidden`）。配对时会签发一个按设备的令牌，随时
+可以用 `~/.cmuxremote/bin/cmux-relay devices revoke <id>` 吊销。
+
+#### 二维码配对（Server 模式）
+
+Server 模式否则就得往手机里输入服务器 URL、relay id，以及一个由
+`openssl rand -hex 32` 生成的 64 位配对码。错一个字符就会得到
+`pairing_rejected`，而 Broker 按来源 IP 把配对请求限制在每分钟 5 次，所以
+输错几次就会被挡上一分钟。改用扫码：
+
+```bash
+# 从 stdin 提示输入配对码
 ~/.cmuxremote/bin/cmux-relay pair
 
-# 또는 VPS에서 바로 파이프로 받기 (쉘 히스토리에 남지 않음)
+# 或者直接从 VPS 用管道取（不会留在 shell 历史里）
 ssh <vps> "docker exec cmux-remote-broker-broker-1 printenv CMUX_PAIRING_CODE" \
   | ~/.cmuxremote/bin/cmux-relay pair
 
-# QR 없이 URL만
+# 只要 URL，不要二维码
 cmux-relay pair --url-only
 ```
 
-서버 URL과 relay id는 `relay.json`에서 자동으로 읽습니다. 페어링 코드만
-인자 또는 stdin으로 넘기는데, 이는 의도적입니다 — `relay.json`은 relay 자기
-`relay_token`만 가지며, Mac이 폰 페어링 비밀까지 보관할 이유는 없습니다.
-stdin으로 읽으면 쉘 히스토리와 `ps` 에도 남지 않습니다. 터미널에는 마스킹된
-형태만 출력됩니다.
+服务器 URL 和 relay id 会从 `relay.json` 自动读取。只有配对码通过参数或
+stdin 传入，这是刻意的：`relay.json` 里存的是 relay 自己的
+`relay_token`，不是手机的配对密钥，Mac 没有理由保管后者。从 stdin 读取还能
+让它不出现在 shell 历史和 `ps` 输出里。终端上只打印脱敏后的形式。
 
-폰에서 **Settings → Connection**(Android는 미페어링 시 첫 화면에 바로 표시),
-모드를 `SERVER`로 바꾸면 **[ SCAN QR FROM MAC ]** 버튼이 나타납니다.
-iOS에서는 스캔하면 세 필드가 채워지지만 자동으로 재연결하지는 않습니다 —
-잘못 스캔한 것이 동작하는 설정을 조용히 덮어쓰는 상황을 피하기 위해
-**[ SAVE & RECONNECT ]** 를 사용자가 누릅니다. Android는 스캔 즉시
-자동 연결됩니다. 페이로드는 `cmux://pair` URL이므로 시스템 카메라나
-아무 QR 스캐너로 스캔해도 앱으로 돌아옵니다.
+在手机上打开 **设置 → 连接**（Android 未配对时直接显示在首屏），把模式
+切到 `SERVER`，就会出现 **[ 扫描 MAC 二维码 ]** 按钮。扫码会填好那三个
+字段，但 iOS 上**不会**自动重连——仍需你点 **[ 保存并重新连接 ]** 确认，
+这样扫错码不会静默顶掉一个能用的配置；Android 上扫码后直接自动连接。
+负载是一个 `cmux://pair` URL，所以用系统相机或任意扫码器扫也能跳回应用，
+和应用内扫码效果一样。
 
-> **QR 코드 자신이 보안 자산입니다.** 페어링 코드가 평문으로 들어있으며,
-> Broker의 `register`는 코드를 소모하지 않으므로 재사용 가능합니다. 스크린샷 /
-> 화면 공유 / 녹화로 유출되지 않도록 사용 후 `clear` 하세요.
+> **二维码本身就是密钥。** 它把配对码以明文形式带在里面，而且 Broker 的
+> `register` 不会消耗这个码，所以二维码可以反复使用。用完请执行 `clear`，
+> 并注意不要让它出现在截图、投屏和录屏里。
 
-### 4. 사용
+### 4. 开始使用
 
-- **Workspaces** — 작업공간 목록. 탭하면 surface 칩바가 펼쳐짐. 여기서 작업공간 생성, 이름 변경, 닫기도 처리.
-  cmux 윈도우가 둘 이상이면 목록 위에 윈도우 스위처가 나타나며, 각 칩은
-  `window:N` 과 작업공간 개수를 보여줍니다 (● 표식은 cmux의 키 윈도우).
-- **Terminal** — 탭한 surface가 미러링. 하단 액세서리 바로 키 입력.
-  키보드 줄, esc / 화살표 / tab / 마우스 모드 / pane 토글 다 거기.
-- **Notifications** — cmux 알림 Inbox. 앱이 살아있을 때 도착한
-  알림이 시간순으로 쌓입니다. iOS 배너도 같이 떠요 (포그라운드/짧은
-  백그라운드).
-- **Settings** — 호스트/포트, QR 스캔 페어링, 재연결, 테스트 알림 발사.
+#### 保存和切换多台电脑
+
+在 **设置 → 电脑 → +** 添加电脑，可以分别配置直连、Server 或 AUTO，
+也可以在添加窗口扫描 Mac 的二维码。每台电脑的地址、Relay ID、连接偏好
+和凭证独立保存，顶部电脑菜单用于切换；终端页显示当前电脑名称，返回列表后
+即可切换。重启应用会恢复上次选择，旧版单电脑配置和此前多电脑版本的数据会自动迁移。
+
+同一时间只连接一台电脑。切换时关闭旧连接，并清空当前终端、工作区和 Inbox，
+不合并不同电脑的通知历史。编辑或移除一台电脑不会清除其他电脑的凭证。
+AUTO 仍然优先局域网、不可达时使用 Broker，两个传输各自保留认证凭证。
+
+配对码按电脑保存在本机 Keychain，成功注册对应传输后清除已使用的配对码。
+解除配对只清除当前电脑的本机凭证；Mac/Broker 端的注册撤销仍需在服务端执行。
+
+- **Workspaces** —— 工作区列表。点一个会展开它的 surface 芯片条，也可以在
+  这里创建、重命名、关闭工作区。
+  当有多个 cmux 窗口时，列表上方会出现窗口切换器，每个芯片显示
+  `window:N` 和该窗口的工作区数量（● 标记 cmux 当前的 key 窗口）。
+- **Terminal** —— 点中的 surface 在这里镜像。底部辅助条上有
+  esc / 方向键 / tab / 鼠标模式 / pane 切换。
+- **Notifications** —— cmux 通知的 Inbox。应用存活期间到达的通知会按时间
+  倒序堆叠，同时也会弹 iOS 横幅（仅前台或短暂后台）。
+- **Settings** —— 主机/端口、二维码扫码配对、重新连接、发送测试通知。
 
 ---
 
-## 설정
+## 配置
 
-Relay는 `~/.cmuxremote/relay.json`을 읽습니다. 파일이 없으면
-`install-launchd.sh`가 아래 기본값으로 자동 생성합니다 (기존 파일은
-건드리지 않음):
+relay 读取 `~/.cmuxremote/relay.json`。文件不存在时，
+`install-launchd.sh` 会写入下面这份默认配置（已存在的文件永远不会被覆盖）：
 
 ```json
 {
@@ -385,21 +425,19 @@ Relay는 `~/.cmuxremote/relay.json`을 읽습니다. 파일이 없으면
 }
 ```
 
-`listen`은 0.0.0.0이지만 비-Tailscale 소스 주소는 애플리케이션
-레이어에서 차단됩니다. 개발 중 localhost를 허용하려면
-`CMUX_DEV_ALLOW_LOCALHOST=1` 환경 변수로 install 스크립트를 돌리세요.
+`listen` 是 `0.0.0.0`，但非 Tailscale 来源地址无论如何都会在应用层被拒绝。
+开发时想放行 localhost，用 `CMUX_DEV_ALLOW_LOCALHOST=1` 运行安装脚本。
 
-생략한 키는 위 기본값으로 채워지므로 위 3줄짜리 설정만으로도 relay는
-정상 부팅합니다. 페어링은 `allow_login`에 등록된 tailnet 로그인의 기기만
-허용하지만(나머지는 `403 Forbidden`), relay가 **자기 Mac의 로그인을 자동으로
-추가**하므로 같은 Tailscale 계정의 iPhone은 보통 비워둬도 붙습니다. 자동
-허용을 끄려면 `CMUX_NO_SELF_LOGIN=1`로 install 스크립트를 돌리세요.
+省略的键会回落到上面的默认值，所以这三行配置足以让 relay 正常启动。配对
+只接受 tailnet 登录名列在 `allow_login` 里的设备（其他人得到
+`403 Forbidden`），但 relay 会**自动加入自己这台 Mac 的登录名**，所以
+iPhone 只要在同一 Tailscale 账号下，`allow_login` 留空通常也能配对。想关掉
+这个行为，用 `CMUX_NO_SELF_LOGIN=1` 运行安装脚本。
 
-다른 계정의 기기를 붙이거나 relay가 태그 노드로 도는 경우에만 로그인을 직접
-추가합니다. 본인 로그인 값은 Tailscale 관리 콘솔, 또는
-`tailscale status --json`의 `Self.UserID`가 가리키는 `User[…].LoginName`
-에서 확인할 수 있습니다 (예: `you@example.com`). 이 값을 넣고 relay를
-재시작하세요:
+只有账号不同、或 relay 跑在 tag 节点上时，才需要手动添加登录名。可以在
+Tailscale 管理后台查到，或者通过 `tailscale status --json` 里
+`Self.UserID` 指向的 `User[…].LoginName` 找到（例如
+`you@example.com`）。加上之后重启 relay：
 
 ```json
 {
@@ -414,20 +452,17 @@ Relay는 `~/.cmuxremote/relay.json`을 읽습니다. 파일이 없으면
 launchctl kickstart -k "gui/$(id -u)/com.genie.cmuxremote"
 ```
 
-cmux Unix socket은 기본적으로 cmux가 쓰는 last-socket-path 마커를
-최신 규칙부터 따라갑니다: 고정 경로 `/tmp/cmux-last-socket-path` →
-`~/.local/state/cmux/last-socket-path` → 레거시
-`~/Library/Application Support/cmux/last-socket-path`. 어느 것도 없으면
-`~/.local/state/cmux/cmux.sock`로 폴백합니다. cmux 재시작으로
-`cmux-501.sock`처럼 socket 이름이 바뀌거나, cmux 업데이트가 소켓을
-`~/Library/Application Support/cmux`에서 `~/.local/state/cmux`로 옮겨도
-relay가 stale socket에 묶이지 않도록 하기 위함입니다. 고정 경로가 꼭
-필요한 운영 환경에서만 `CMUX_SOCKET_PATH=/path/to/socket`으로
-install 스크립트를 실행하세요.
+默认情况下，relay 按最新约定优先的顺序跟随 cmux 的 `last-socket-path`
+标记文件：先是固定的 `/tmp/cmux-last-socket-path`，然后
+`~/.local/state/cmux/last-socket-path`，再然后是旧的
+`~/Library/Application Support/cmux/last-socket-path`；都解析不到时回落到
+`~/.local/state/cmux/cmux.sock`。这样当 cmux 轮换 socket 名（例如
+`cmux-501.sock`）或某次更新把它从 `~/Library/Application Support/cmux` 移到
+`~/.local/state/cmux` 时，relay 不会被钉死在一个失效的 socket 上。只有当你
+确实需要固定某个 socket 时，才设置 `CMUX_SOCKET_PATH=/path/to/socket`。
 
-> **APNs 푸시 (`apns` 블록).** relay.json에 `apns` 블록을 넣으면 cmux
-> 알림이 APNs 푸시로 전달돼 앱이 종료된 상태에서도 도착합니다. 블록이
-> 없으면 알림은 로컬 알림으로만 표시됩니다.
+> **APNs 推送（`apns` 块）。** 在 `relay.json` 里加上 `apns` 块，cmux 通知
+> 就会通过 APNs 投递，即使应用已被杀掉也能收到。不加这个块时通知仅限本地。
 >
 > ```json
 > {
@@ -441,253 +476,242 @@ install 스크립트를 실행하세요.
 > }
 > ```
 >
-> `env`는 개발/사이드로드 빌드면 `"sandbox"`, App Store/배포 빌드면 `"prod"`.
+> 开发/侧载构建把 `env` 设为 `"sandbox"`，App Store / 正式构建设为 `"prod"`。
 
 ---
 
-## relay 운영
+## 运维 relay
 
-relay는 launchd 유저 에이전트(`com.genie.cmuxremote`)로 돌아갑니다.
-`RunAtLoad` + `KeepAlive`라 로그인 시 자동 시작되고 죽으면 다시 떠요.
+relay 以 launchd 用户代理（`com.genie.cmuxremote`）运行。因为设了
+`RunAtLoad` + `KeepAlive`，它会在登录时自动启动，挂掉后自动重启。
 
 ```bash
 SERVICE="gui/$(id -u)/com.genie.cmuxremote"
 
-# 재시작 (재빌드 없이 — 가장 자주 씀)
+# 重启（不重新构建 —— 最常用）
 launchctl kickstart -k "$SERVICE"
 
-# 상태 (state / pid / last exit code)
+# 状态（state / pid / 上次退出码）
 launchctl print "$SERVICE" | grep -E "state|pid|last exit"
 
-# 실시간 로그
+# 实时日志
 tail -f ~/.cmuxremote/log/stderr.log
 
-# 일시 중지 (KeepAlive 때문에 bootout 사용)
+# 暂停（用 bootout，因为 KeepAlive 会把它拉起来）
 launchctl bootout "$SERVICE"
 ```
 
-소스를 바꿔 새 바이너리를 반영하려면 빌드 → 복사 → plist 렌더 →
-bootstrap + kickstart를 한 번에 처리하는 설치 스크립트를 다시 돌립니다:
+要让源码改动生效，重新运行安装脚本——它会一次性完成构建、复制、重新渲染
+plist，以及 bootstrap + kickstart：
 
 ```bash
-./scripts/install-launchd.sh            # swift build -c release 포함
-./scripts/uninstall-launchd.sh          # bootout + plist 제거
+./scripts/install-launchd.sh            # 包含 swift build -c release
+./scripts/uninstall-launchd.sh          # bootout + 删除 plist
 ```
-
-정상 기동 시 `stderr.log`에 `starting cmux-relay on 0.0.0.0:4399` →
-`listening …` → `cmux event stream attached` 순으로 찍힙니다.
-`cmux event stream unavailable: socketMissing`가 보이면 cmux 앱부터
-켜고 relay를 kickstart 하세요. `Connection refused`가 반복되면 relay가
-stale socket에 묶인 것 — install 스크립트를 다시 실행해 최신 바이너리로
-재설치하면 새 마커 경로(`/tmp/cmux-last-socket-path` →
-`~/.local/state/cmux`)를 자동으로 따라갑니다. 급하면
-`cat /tmp/cmux-last-socket-path`로 라이브 소켓을 확인해 `CMUX_SOCKET_PATH`로
-핀하세요.
 
 ---
 
-## 연결이 안 될 때
+## 连接排查
 
-iPhone 앱에서 연결이 안 되면, **Mac에서** 아래 순서로 한 줄씩 확인하세요.
-대부분 1~2번에서 해결됩니다. 자세한 단계별 안내와 사용자에게 그대로 전달할
-수 있는 안내문은 **[연결 가이드](docs/connection-guide.md)** 참고.
+如果 iPhone 应用连不上，**在 Mac 上**按顺序执行下面这些检查，一行一行来。
+多数问题在第 ① 或 ② 步就能解决。完整的分步说明和一份可以直接发给用户的
+提示，见 **[连接指南](docs/connection-guide.md)**。
 
 ```bash
 SERVICE="gui/$(id -u)/com.genie.cmuxremote"
 ```
 
-| 확인 | 명령 | 안 되면 |
+| 检查项 | 命令 | 失败怎么办 |
 |---|---|---|
-| ① cmux 실행 중? | `cmux --version` | cmux 앱을 켜고 → `launchctl kickstart -k "$SERVICE"` |
-| ② relay 떠 있나? | `curl -s http://$(tailscale ip -4):4399/v1/health` | `launchctl kickstart -k "$SERVICE"`, 그래도 안 되면 `./scripts/install-launchd.sh` 재실행 |
-| ③ 로그 정상? | `tail -n 40 ~/.cmuxremote/log/stderr.log` | 아래 로그별 대응 참고 |
-| ④ Tailscale 양쪽 온라인? | `tailscale status` | Mac·iPhone 둘 다 같은 Tailnet 로그인 확인 |
-| ⑤ 앱 주소 맞나? | `tailscale ip -4` | 앱에 이 IP + 포트 `4399` 입력했는지 확인 |
+| ① cmux 在运行吗？ | `cmux --version` | 启动 cmux 应用，然后 `launchctl kickstart -k "$SERVICE"` |
+| ② relay 起来了吗？ | `curl -s http://$(tailscale ip -4):4399/v1/health` | `launchctl kickstart -k "$SERVICE"`；仍然不行就重新执行 `./scripts/install-launchd.sh` |
+| ③ 日志正常吗？ | `tail -n 40 ~/.cmuxremote/log/stderr.log` | 见下面按日志分类的处理办法 |
+| ④ 两端 Tailscale 都在线吗？ | `tailscale status` | 确认 Mac 和 iPhone 在同一个 Tailnet |
+| ⑤ 应用里的地址对吗？ | `tailscale ip -4` | 确认应用用的是这个 IP 加端口 `4399` |
 
-로그별 대응:
+按日志分类的处理办法：
 
-- `cmux event stream unavailable: socketMissing` — **cmux가 꺼져 있음.**
-  cmux 앱을 켜고 `launchctl kickstart -k "$SERVICE"`.
-- `Connection refused` 반복 — **소켓 경로가 바뀜**(cmux 재시작으로 이름이
-  바뀌었거나, 업데이트가 소켓을 `~/.local/state/cmux`로 옮김). 최신 relay는
-  마커를 자동 추적하니 `./scripts/install-launchd.sh`로 재설치하면 해결.
-  급하면 `cat /tmp/cmux-last-socket-path`의 경로를 `CMUX_SOCKET_PATH`로 핀.
-- 헬스 체크는 OK인데 앱만 못 붙음 — **네트워크/주소 문제.** iPhone과
-  Mac이 같은 Tailnet인지, 앱 주소·포트(`4399`)가 맞는지, 디바이스 토큰이
-  revoke되지 않았는지(`.build/release/cmux-relay devices list`) 확인.
+- `cmux event stream unavailable: socketMissing` —— **cmux 没在运行。**
+  启动 cmux 应用，然后 `launchctl kickstart -k "$SERVICE"`。
+- 反复出现 `Connection refused` —— **socket 路径变了**（cmux 轮换了 socket
+  名，或者某次更新把它移到了 `~/.local/state/cmux`）。较新的 relay 会自动
+  跟踪标记文件，所以重新执行 `./scripts/install-launchd.sh` 即可修好。急的
+  话可以用 `cat /tmp/cmux-last-socket-path` 查出路径，再用
+  `CMUX_SOCKET_PATH` 钉住。
+- 健康检查通过但只有应用连不上 —— **网络/地址问题。** 确认 iPhone 和 Mac
+  在同一 Tailnet、应用里的地址和端口（`4399`）正确，以及设备令牌没有被吊销
+  （`.build/release/cmux-relay devices list`）。
 
-> cmux를 자주 재시작한다면, 소켓 회전 후 relay를 다시 붙이는 가장 빠른
-> 방법은 `launchctl kickstart -k "$SERVICE"` 입니다.
-
----
-
-## 로드맵
-
-- [x] v1.0 — 작업공간 목록, surface 생성/닫기, 터미널 미러, 키 입력,
-      마우스 모드, pane 토글, 로컬 알림, Tokyo Night Storm UI
-- [x] v1.0.2 — 키보드 레이아웃 안정화, 사진 첨부, MacBook 배터리 배지,
-      `needs input` Inbox, 워크스페이스 생성/이름변경/닫기
-- [x] v1.0.3 — 실기기 relay socket 회전/재연결 안정화
-- [x] v1.0.4 — 터미널 렌더링 성능 최적화, 120줄 history, ANSI 256색/truecolor 렌더링 기반, 실기기 live relay 스모크 검증
-- [x] v1.0.5 — LIVE 입력 모드, 한글 IME 보호, 하단 고정 입력 패널, 터미널 5행 하단 스크롤 여유, Claude/Codex Inbox 회귀 테스트
-- [x] v1.0.6 — 네이티브 APNs 푸시 알림(앱 종료 상태 도달), Ctrl-C 단축키, App Store 스크린샷 5장 교체
-- [ ] **v1.1 — 푸시 후속** — 푸시 페이로드 → 딥링크로 surface 자동 오픈, 전달 신뢰성/재시도 강화
-- [ ] v1.2 — iPad 레이아웃, 외장 키보드 폴리시
-- [ ] v1.3 — cmux "open in pane" 인텐트용 파일 프리뷰
-- [ ] v2.0 — 고빈도 TUI(vim, htop, k9s) 대상 바이트스트림 RPC
-- [x] Android 클라이언트 — Kotlin + Jetpack Compose (`android/`), QR 페어링,
-      iOS와 동일한 4탭 UI와 기능 세트, Google Play 서비스 불필요
-
-명시적 비목표: 공용 인터넷 노출(Tailscale Funnel), 멀티유저 공유,
-라이브 세션 외부의 서버측 영속 저장.
+启动日志应当依次打印 `starting cmux-relay on 0.0.0.0:4399` →
+`listening …` → `cmux event stream attached`。如果你经常重启 cmux，socket
+轮换后重新连上最快的办法是 `launchctl kickstart -k "$SERVICE"`。
 
 ---
 
-## 프로젝트 구조
+## 路线图
+
+- [x] v1.0 —— 工作区列表、surface 创建/关闭、终端镜像、按键发送、鼠标模式、
+      pane 切换、本地通知、Tokyo Night Storm UI
+- [x] v1.0.2 —— 键盘布局修复、照片附加、MacBook 电池角标、
+      `needs input` 的 Inbox 处理、工作区创建/重命名/关闭
+- [x] v1.0.3 —— 真机上 relay socket 轮换 / 重连的可靠性
+- [x] v1.0.4 —— 终端渲染性能、120 行历史、ANSI 256 色 / 真彩基础、真机
+      iPhone 实时 relay 冒烟验证
+- [x] v1.0.5 —— LIVE 输入模式、谚文 IME 防护、输入面板贴底、终端五行滚动
+      空间、Claude/Codex Inbox 回归覆盖
+- [x] v1.0.6 —— 原生 APNs 推送（可送达已被杀掉的应用）、Ctrl-C 快捷键、
+      五张 App Store 截图全部更新
+- [ ] **v1.1 —— 推送后续** —— 基于 payload 的深链自动跳转到对应 surface、
+      投递可靠性 / 重试
+- [ ] v1.2 —— iPad 布局、外接键盘打磨
+- [ ] v1.3 —— cmux "在 pane 中打开" 意图的文件预览
+- [x] Android 客户端 —— Kotlin + Jetpack Compose（`android/`），扫码配对、
+      与 iOS 相同的四 Tab 界面和功能集，无需 Google Play 服务
+- [ ] v2.0 —— 面向高频 TUI（vim、htop、k9s）的字节流 RPC
+
+明确不做的：公网暴露（Tailscale Funnel）、多用户共享、超出实时会话范围的
+服务端持久化。
+
+---
+
+## 项目结构
 
 ```
 cmux-remote/
-├─ README.md / README.en.md
+├─ README.md / README.en.md / README.ko.md
 ├─ LICENSE
 ├─ docs/
-│  ├─ screenshots/          # README용 스크린샷
-│  └─ specs/                # 설계 문서, 결정 RFC
+│  ├─ screenshots/          # README 素材
+│  └─ specs/                # 设计文档、RFC
 ├─ Package.swift            # SharedKit / CMUXClient / RelayCore / cmux-relay
 ├─ Sources/
-│  ├─ SharedKit/            # Codable 모델, JSON-RPC 봉투, 키 테이블, 스크린 해셔
-│  ├─ CMUXClient/           # cmux UDS JSON-RPC 클라이언트 (Mac 전용)
-│  ├─ RelayCore/            # Auth, Session, DiffEngine, RowState, DeviceStore
-│  └─ RelayServer/          # @main, NIO HTTP+WS, launchd 엔트리
-├─ Tests/                   # 유닛 + 통합 테스트
+│  ├─ SharedKit/            # Codable 模型、JSON-RPC 信封、按键表、屏幕哈希
+│  ├─ CMUXClient/           # cmux UDS JSON-RPC 客户端（仅 Mac）
+│  ├─ RelayCore/            # 鉴权、会话、DiffEngine、RowState、DeviceStore
+│  └─ RelayServer/          # @main、NIO HTTP+WS、launchd 入口
+├─ Tests/                   # 单元 + 集成测试
 ├─ ios/
 │  ├─ CmuxRemote.xcodeproj
 │  └─ CmuxRemote/
 │     ├─ CmuxRemoteApp.swift / ContentView.swift
-│     ├─ Network/           # RPCClient, WSClient, AuthClient, EndpointPolicy
-│     ├─ Notifications/     # LocalNotificationPresenter, NotificationCenterView
-│     ├─ Stores/            # WorkspaceStore, SurfaceStore, NotificationStore, HostStatusStore
-│     ├─ Terminal/          # CellGrid, ANSIParser, TerminalView, 셀폭 계산
-│     ├─ Workspace/         # WorkspaceListView, WorkspaceDrawer, WorkspaceView
-│     ├─ Settings/          # SettingsView
+│     ├─ Network/           # RPCClient、WSClient、AuthClient、EndpointPolicy
+│     ├─ Notifications/     # LocalNotificationPresenter、NotificationCenterView
+│     ├─ Stores/            # WorkspaceStore、SurfaceStore、NotificationStore、HostStatusStore
+│     ├─ Terminal/          # CellGrid、ANSIParser、TerminalView、单元格宽度
+│     ├─ Workspace/         # WorkspaceListView、WorkspaceDrawer、WorkspaceView
+│     ├─ Settings/          # SettingsView、PairingScannerView
 │     ├─ Keyboard/          # CommandComposer
-│     ├─ UI/                # Tokyo Night 테마, 스플래시, Metal 셰이더
+│     ├─ UI/                # Tokyo Night 主题、启动页、Metal 着色器
 │     ├─ Security/          # HardeningCheck
 │     └─ Storage/           # Keychain
 ├─ android/
 │  └─ app/src/main/java/com/genie/cmuxremote/
-│     ├─ net/               # Endpoint, RelayClient (OkHttp WS RPC), Protocol
-│     ├─ term/              # AnsiParser, ScreenState (diff/checksum)
-│     ├─ state/             # AppViewModel (연결, 자격증명, 워크스페이스, Inbox)
-│     └─ ui/                # MainShell 4탭 셸 + Connect/Workspace/Terminal/
-│                           #   Inbox/Settings 화면 (Compose)
+│     ├─ net/               # Endpoint、RelayClient（OkHttp WS RPC）、Protocol
+│     ├─ term/              # AnsiParser、ScreenState（diff/checksum）
+│     ├─ state/             # AppViewModel（连接、凭据、工作区、Inbox）
+│     └─ ui/                # MainShell 四 Tab + Connect/Workspace/Terminal/
+│                           #   Inbox/Settings 页（Compose）
 └─ scripts/
-   ├─ install-launchd.sh    # cmux-relay launchd 설치
+   ├─ install-launchd.sh    # cmux-relay launchd 安装脚本
    ├─ uninstall-launchd.sh
    ├─ relay.plist.tmpl
-   ├─ cmux-probe.sh         # cmux 소켓 핑
-   ├─ smoke-relay.sh        # tailnet end-to-end 스모크
+   ├─ cmux-probe.sh         # 探测 cmux socket
+   ├─ smoke-relay.sh        # 端到端 tailnet 冒烟
    └─ evaluate-terminal-keyboard.sh
 ```
 
-> 내부 식별자는 camelCase `CmuxRemote` (Xcode 타깃, Swift 모듈,
-> 번들 ID `com.genie.CmuxRemote`). 홈스크린 표시 이름은 공백을
-> 둔 **cmux Remote**. 양쪽 다 정상.
+> 内部标识符使用驼峰式的 `CmuxRemote`（Xcode target、Swift 模块名、
+> bundle ID `com.genie.CmuxRemote`）。主屏幕显示名是带空格的
+> **cmux Remote**。两者都是对的。
 
 ---
 
-## 개발
+## 开发
 
 ```bash
-# Swift 테스트 전체 (relay + shared kits)
+# 跑全部 Swift 测试（relay + 共享模块）
 swift test
 
-# iOS 앱 Xcode 프로젝트 생성
+# 生成 iOS 应用的 Xcode 工程
 cd ios && xcodegen generate
 
-# Android APK 빌드 (app/build/outputs/apk/debug/app-debug.apk 생성)
+# 构建 Android APK（产出 app/build/outputs/apk/debug/app-debug.apk）
 cd android && gradle :app:assembleDebug
 
-# 시뮬레이터에서 iOS 테스트 (Fake RPC 디스패치)
+# 用进程内的假 relay 跑 iOS 测试套件
 xcodebuild test -project CmuxRemote.xcodeproj \
   -scheme CmuxRemote -destination 'platform=iOS Simulator,name=iPhone 15'
 
-# 실제 cmux + Tailscale 풀스택 스모크 (느림, 에페메럴 노드 사용)
+# 对真实 cmux + 真实 Tailscale 的完整冒烟（慢；使用临时节点）
 SMOKE_EPHEMERAL=1 ./scripts/smoke-relay.sh
 ```
 
-스모크 스크립트는 임시 Tailscale 노드 + 격리된 config 디렉토리를
-띄우고, 가짜 디바이스를 등록한 뒤 문서화된 모든 relay 엔드포인트
-(`/v1/health`, `/v1/devices/me/register`, `/v1/state`,
-`/v1/devices/me/apns`, WebSocket hello, `workspace.list`,
-`surface.list`, `surface.subscribe`, `screen.diff`,
-`screen.checksum`)를 차례로 두드립니다. relay 와이어 포맷을
-건드릴 때 유용.
+冒烟脚本会拉起一个临时 Tailscale 节点和一个隔离的配置目录，注册一个假设备，
+然后跑一遍所有已公开文档的 relay 端点（`/v1/health`、
+`/v1/devices/me/register`、`/v1/state`、`/v1/devices/me/apns`、WebSocket
+hello、`workspace.list`、`surface.list`、`surface.subscribe`、
+`screen.diff`、`screen.checksum`）。每次改动 relay 的线上格式后都跑一次。
 
-iOS 앱은 `FAKE_RPC=1` (DEBUG 빌드 기본값) 또는 시뮬레이터에서
-`FakeRPCDispatch`를 사용해 relay 없이도 빌드 + UI 테스트가
-돌아갑니다.
+iOS 应用使用 `FakeRPCDispatch`（DEBUG 模拟器构建下默认启用，或用
+`FAKE_RPC=1`），所以不接真实 relay 也能构建、运行和通过 UI 测试。
 
 ---
 
-## 기여
+## 贡献
 
-이슈와 PR 환영합니다. 몇 가지 규칙:
+欢迎提 issue 和 PR。几条基本规则：
 
-- PR 하나에 기능 하나. diff는 작게.
-- 테스트 추가/갱신. relay는 단위 커버리지가 있고, iOS는 fake-relay
-  디스패치로 UI 테스트가 돕니다.
-- cmux 소스를 이 저장소에 붙여넣지 마세요. 라이선스 분리 유지가
-  중요 (아래 참고).
-- 버그 리포트에는 relay 로그 + cmux 버전 (`cmux --version`)을 같이.
+- 一个 PR 一个功能，diff 保持小。
+- 补充或更新测试。relay 有不错的单元测试覆盖，iOS 应用有假 relay 分发用于
+  UI 测试。两边都不要退化。
+- 不要把 cmux 源代码粘进本仓库。我们刻意保持这一侧的许可证清洁（见下文）。
+- Bug 报告请附上 relay 日志行和 cmux 版本（`cmux --version`）。
 
-더 큰 아이디어(새 transport, 새 auth 모델, 바이트스트림 RPC 등)는
-discussion을 열거나 `docs/specs/`에 디자인 문서를 먼저 올려주세요.
-
----
-
-## 보안
-
-- Relay는 tailnet 인터페이스만 받아들입니다 — 비-Tailscale 소스 주소는
-  애플리케이션 레이어에서 거부 (개발용 localhost 허용은
-  `CMUX_DEV_ALLOW_LOCALHOST=1`로만).
-- iPhone마다 페어링 시 발급된 토큰을 가집니다. 메뉴바에서 개별 revoke.
-- 알림 페이로드에는 터미널 내용이 포함되지 않습니다 — workspace/surface
-  id + 짧은 title만.
-- 텔레메트리 / 분석 / 서드파티 네트워크 호출 없음.
-
-보안 이슈는 이슈 트래커에 공개로 올리지 말고 `SECURITY.md`의 메인테이너
-이메일로 알려주세요.
+更大的想法（新传输方式、新鉴权模型、字节流 RPC）请先开个 discussion，或者
+先在 `docs/specs/` 下放一份设计文档。
 
 ---
 
-## 라이선스
+## 安全
 
-cmux Remote는 **MIT 라이선스** — [`LICENSE`](LICENSE) 참조.
+- relay 只绑定 tailnet 接口——非 Tailscale 来源地址会在应用层被拒绝
+  （唯一的例外是开发用的 `CMUX_DEV_ALLOW_LOCALHOST=1`）。
+- 每台 iPhone 在配对时获得一个按设备的令牌。令牌可以从 relay 的菜单栏单独
+  吊销。
+- 通知负载从不包含终端内容——只有工作区/surface id 和一个简短标题。
+- 无遥测。无分析。无第三方网络调用。
 
-### cmux와의 관계
-
-[cmux](https://github.com/manaflow-ai/cmux)는 © Manaflow, Inc.,
-GPL-3.0-or-later 또는 상용 라이선스로 듀얼 라이선스됩니다. cmux Remote는
-**독립 네트워크 클라이언트**입니다. cmux 소스 코드를 포함하거나, 링크하거나,
-수정하지 않습니다. 통신은 전적으로 문서화된 JSON-RPC 프로토콜을 통해서만
-이루어집니다. Free Software Foundation은 GPL 프로그램과 문서화된 네트워크
-프로토콜을 통해서만 상호작용하는 프로그램은 그 프로그램의 파생 저작물이
-아니라는 일반적 입장을 가지고 있으며, cmux Remote는 이에 근거해 배포됩니다.
-
-### 상표 고지
-
-"cmux"는 Manaflow, Inc.가 자사 터미널 제품을 식별하기 위해 사용하는
-이름입니다. cmux Remote는 이 클라이언트가 상호운용되도록 설계된
-소프트웨어를 식별하기 위한 *기술적 묘사 용도*로만 이 이름을 사용합니다.
-cmux Remote는 Manaflow, Inc.와 제휴, 후원, 추천 관계가 아닙니다. Manaflow
-측에서 이름 변경을 요청하시면 이슈를 열어주세요 — 군말 없이 이름을
-바꾸겠습니다.
+如果你发现安全问题，请给维护者发邮件（见 `SECURITY.md`），不要开公开
+issue。
 
 ---
 
-## 감사의 말
+## 许可证
 
-- [cmux](https://github.com/manaflow-ai/cmux) 팀 — 이 앱이 확장하는
-  터미널을 만들어 주셔서.
-- [Tailscale](https://tailscale.com) — 지루할 만큼 완벽한 전송.
-- [SwiftNIO](https://github.com/apple/swift-nio) — relay의 HTTP/WS 스택.
+cmux Remote 以 **MIT 许可证** 发布，见 [`LICENSE`](LICENSE)。
+
+### 与 cmux 的关系
+
+[cmux](https://github.com/manaflow-ai/cmux) 版权归 Manaflow, Inc. 所有，
+以 GPL-3.0-or-later 或商业许可证双重授权。cmux Remote 是一个**独立的网络
+客户端**：它不包含、不链接、也不修改任何 cmux 源代码，只通过已公开文档的
+JSON-RPC 协议与 cmux 通信。自由软件基金会的一般立场是，纯粹通过已公开文档
+的网络协议与 GPL 程序交互的程序，不构成该程序的衍生作品，cmux Remote 正是
+在此基础上分发的。
+
+### 商标声明
+
+"cmux" 是 Manaflow, Inc. 用于标识其终端产品的名称。cmux Remote 使用
+"cmux" 这个名字仅作描述性用途，用来标识本客户端所要互操作的软件。cmux
+Remote 与 Manaflow, Inc. 没有任何隶属、赞助或背书关系。如果你来自
+Manaflow 并希望我们改名，请开一个 issue —— 我们会无条件改。
+
+---
+
+## 致谢
+
+- [cmux](https://github.com/manaflow-ai/cmux) 团队，做出了本应用所扩展的
+  这款终端。
+- [Tailscale](https://tailscale.com)，提供了平淡但完美的传输层。
+- [SwiftNIO](https://github.com/apple/swift-nio)，支撑了 relay 的 HTTP/WS
+  栈。

@@ -2,12 +2,13 @@
 
 # cmux Remote
 
-> 通过 Tailscale 或自建 VPS，用 iPhone 操作 Mac 上
+> 通过 Tailscale 或自建 VPS，用 iPhone 或 Android 手机操作 Mac 上
 > [cmux](https://github.com/manaflow-ai/cmux) 终端的非官方远程客户端。
 
-cmux Remote 是一套 SwiftUI 应用 + Swift 守护进程的组合，让你在 iPhone 上
-读取和操作 Mac 上 cmux 里运行的终端。Direct 模式走你的 Tailscale tailnet；
-可选的 Server 模式让 iPhone 和 Mac 各自通过 TLS 主动连接到你自己控制的
+cmux Remote 是一套手机应用 + Swift 守护进程的组合，让你在 iPhone
+（SwiftUI）或 Android 手机（Kotlin + Jetpack Compose）上读取和操作
+Mac 上 cmux 里运行的终端。Direct 模式走你的 Tailscale tailnet；
+可选的 Server 模式让手机和 Mac 各自通过 TLS 主动连接到你自己控制的
 VPS Broker。
 
 > **不想在手机上装 Tailscale：** 参考
@@ -27,6 +28,11 @@ VPS Broker。
 
 相比 v1.0.5 的新增与变更：
 
+- 🤖 **Android 客户端（新）** — `android/` 目录新增原生客户端（Kotlin +
+  Jetpack Compose，**不依赖 Google Play 服务**）：扫码配对、工作区 /
+  surface 管理、ANSI 终端镜像、CMD/LIVE 输入面板、快捷键行与事件 Inbox，
+  界面结构与 iOS 版一致（底部四个 Tab：Workspaces / Active / Inbox /
+  Settings）。
 - 🔔 **原生推送通知（APNs）** — relay 通过 APNs 投递 cmux 事件和 Claude/Codex 风格的 `needs input` 提示。在 relay 上配置 `apns` 块后，即使应用被切到后台或已被杀掉也能收到横幅；不配置则回落到现有的本地通知。
 - ⌨️ **Ctrl-C 快捷键** — 终端键盘条上新增独立的 Ctrl-C 键，用于中断正在运行的命令。
 - 🖼️ **五张 App Store 截图全部更新** — 工作区、终端、键盘、Inbox 和设置页的最新界面。
@@ -99,7 +105,7 @@ cmux 是一款很出色的 Mac 原生终端，很适合配合 AI 编码 agent �
 ## 架构
 
 ```
-iPhone (iOS 17+)         Tailscale            Mac
+iPhone / Android         Tailscale            Mac
 ┌─────────────────────┐                       ┌────────────────────────────────┐
 │ cmux Remote (app)   │── HTTP + WS ─────────▶│ cmux-relay (Swift, launchd)    │
 │  · 工作区列表        │   (Tailscale 加密)     │  · HTTP/1.1 路由                │
@@ -117,7 +123,7 @@ iPhone (iOS 17+)         Tailscale            Mac
                                               └────────────────────────────────┘
 ```
 
-Server 模式的链路是 `iPhone -- HTTPS/WSS --> VPS Broker <-- WSS -- Mac relay`。
+Server 模式的链路是 `手机 -- HTTPS/WSS --> VPS Broker <-- WSS -- Mac relay`。
 Mac 不需要开放任何入站端口，Direct 模式仍是默认。
 
 需要装两个东西：
@@ -125,8 +131,10 @@ Mac 不需要开放任何入站端口，Direct 模式仍是默认。
 1. **`cmux-relay`** — 一个跑在 cmux 同一台 Mac 上的小型 Swift 守护进程。
    它用 JSON-RPC 与 cmux 的本地 Unix socket 通信，并在 tailnet 接口上暴露
    HTTP + WebSocket API。TLS 由 Tailscale 的 WireGuard 传输层本身提供。
-2. **cmux Remote（iOS）** — iPhone 上的 SwiftUI 应用。它只与你自己的
-   relay 通信，任何数据都不会离开你的 tailnet。
+2. **cmux Remote（iOS / Android）** — 手机上的客户端应用：iOS 是 SwiftUI
+   应用（`ios/`），Android 是 Kotlin + Jetpack Compose 应用
+   （`android/`）。两者都只与你自己的 relay 通信，任何数据都不会离开
+   你的 tailnet / broker。
 
 本仓库刻意**不包含**任何 cmux 源代码。它是一个通过已公开文档的 JSON-RPC
 schema 与 cmux 通信的网络客户端。
@@ -234,6 +242,13 @@ schema 与 cmux 通信的网络客户端。
 - 侧载需要 Apple 开发者账号（免费的 7 天个人证书够用；上架 App Store
   需要付费账号）
 
+### Android 手机
+
+- Android 8.0（API 26）或更新
+- **不需要 Google Play 服务**——扫码解码用的是 ZXing，国行/无 GMS 机型可用
+- 用源码构建 APK（见下方「快速开始」），或 `adb install` 已构建的
+  `app-debug.apk`
+
 ### 网络
 
 - Direct：两端都需 Tailscale 1.84+；不需要 Funnel 或公网主机名
@@ -299,7 +314,7 @@ tail -n 40 ~/.cmuxremote/log/stderr.log
 `cmux event stream attached` 就说明正常。否则跳到下方的
 **连接排查**。
 
-### 3. 配对 iPhone
+### 3. 配对手机
 
 先找到 Mac 的地址：
 
@@ -307,6 +322,20 @@ tail -n 40 ~/.cmuxremote/log/stderr.log
 tailscale ip -4          # 例如 100.x.y.z  ← 在应用里填这个
 tailscale status         # 想用 MagicDNS 名称（例如 my-mac）时看这个
 ```
+
+#### Android：构建、安装、扫码
+
+```bash
+cd android
+gradle :app:assembleDebug        # 产出 app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+打开应用后点 **Scan QR to pair**，对准 Mac 上 `cmux-relay pair` 打印的
+二维码即可（二维码内容见下方「二维码配对」）。也支持粘贴
+`cmux://pair` 链接和手动填写直连 / Server 字段。
+
+#### iPhone
 
 在 iPhone 上打开 cmux Remote：
 
@@ -344,10 +373,11 @@ stdin 传入，这是刻意的：`relay.json` 里存的是 relay 自己的
 `relay_token`，不是手机的配对密钥，Mac 没有理由保管后者。从 stdin 读取还能
 让它不出现在 shell 历史和 `ps` 输出里。终端上只打印脱敏后的形式。
 
-在手机上打开 **设置 → 连接**，把模式切到 `SERVER`，就会出现
-**[ 扫描 MAC 二维码 ]** 按钮。扫码会填好那三个字段，但**不会**自动重连——
-仍需你点 **[ 保存并重新连接 ]** 确认，这样扫错码不会静默顶掉一个能用的
-配置。负载是一个 `cmux://pair` URL，所以用 iOS 自带相机扫也能跳回应用，
+在手机上打开 **设置 → 连接**（Android 未配对时直接显示在首屏），把模式
+切到 `SERVER`，就会出现 **[ 扫描 MAC 二维码 ]** 按钮。扫码会填好那三个
+字段，但 iOS 上**不会**自动重连——仍需你点 **[ 保存并重新连接 ]** 确认，
+这样扫错码不会静默顶掉一个能用的配置；Android 上扫码后直接自动连接。
+负载是一个 `cmux://pair` URL，所以用系统相机或任意扫码器扫也能跳回应用，
 和应用内扫码效果一样。
 
 > **二维码本身就是密钥。** 它把配对码以明文形式带在里面，而且 Broker 的
@@ -535,8 +565,9 @@ SERVICE="gui/$(id -u)/com.genie.cmuxremote"
       投递可靠性 / 重试
 - [ ] v1.2 —— iPad 布局、外接键盘打磨
 - [ ] v1.3 —— cmux "在 pane 中打开" 意图的文件预览
+- [x] Android 客户端 —— Kotlin + Jetpack Compose（`android/`），扫码配对、
+      与 iOS 相同的四 Tab 界面和功能集，无需 Google Play 服务
 - [ ] v2.0 —— 面向高频 TUI（vim、htop、k9s）的字节流 RPC
-- [ ] 也许 —— Android 客户端（欢迎 PR，见 `docs/specs/`）
 
 明确不做的：公网暴露（Tailscale Funnel）、多用户共享、超出实时会话范围的
 服务端持久化。
@@ -573,6 +604,13 @@ cmux-remote/
 │     ├─ UI/                # Tokyo Night 主题、启动页、Metal 着色器
 │     ├─ Security/          # HardeningCheck
 │     └─ Storage/           # Keychain
+├─ android/
+│  └─ app/src/main/java/com/genie/cmuxremote/
+│     ├─ net/               # Endpoint、RelayClient（OkHttp WS RPC）、Protocol
+│     ├─ term/              # AnsiParser、ScreenState（diff/checksum）
+│     ├─ state/             # AppViewModel（连接、凭据、工作区、Inbox）
+│     └─ ui/                # MainShell 四 Tab + Connect/Workspace/Terminal/
+│                           #   Inbox/Settings 页（Compose）
 └─ scripts/
    ├─ install-launchd.sh    # cmux-relay launchd 安装脚本
    ├─ uninstall-launchd.sh
@@ -596,6 +634,9 @@ swift test
 
 # 生成 iOS 应用的 Xcode 工程
 cd ios && xcodegen generate
+
+# 构建 Android APK（产出 app/build/outputs/apk/debug/app-debug.apk）
+cd android && gradle :app:assembleDebug
 
 # 用进程内的假 relay 跑 iOS 测试套件
 xcodebuild test -project CmuxRemote.xcodeproj \

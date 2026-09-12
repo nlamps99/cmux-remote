@@ -3,14 +3,15 @@
 # cmux Remote
 
 > Tailscale 또는 직접 운영하는 VPS를 통해 [cmux](https://github.com/manaflow-ai/cmux)
-> 터미널을 iPhone으로 조작하는 비공식 원격 클라이언트.
+> 터미널을 iPhone / Android 폰으로 조작하는 비공식 원격 클라이언트.
 
-cmux Remote는 Mac에서 돌아가는 cmux의 작업공간과 터미널을 iPhone에서
-읽고 조작할 수 있게 해주는 SwiftUI 앱 + Swift 데몬 묶음입니다. Direct
-모드는 Tailscale을 사용하고, 선택형 Server 모드는 iPhone과 Mac이 사용자가
+cmux Remote는 Mac에서 돌아가는 cmux의 작업공간과 터미널을 폰에서
+읽고 조작할 수 있게 해주는 앱 + Swift 데몬 묶음입니다 — iPhone은 SwiftUI,
+Android는 Kotlin + Jetpack Compose 클라이언트. Direct
+모드는 Tailscale을 사용하고, 선택형 Server 모드는 폰과 Mac이 사용자가
 운영하는 VPS Broker에 TLS로 각각 outbound 연결합니다.
 
-> **iPhone에 Tailscale을 설치하지 않는 방법:**
+> **폰에 Tailscale을 설치하지 않는 방법:**
 > [자체 호스팅 Broker 가이드](broker/README.md)를 참고하세요. Server 모드는
 > TLS를 사용하지만 E2E 암호화는 아니므로 Broker가 중계 프레임을 볼 수 있습니다.
 
@@ -27,6 +28,7 @@ cmux와 문서화된 JSON-RPC 프로토콜로만 통신하는 독립 네트워�
 
 v1.0.5 이후 새로 추가되거나 바뀐 점:
 
+- 🤖 **Android 클라이언트 (신규)** — `android/`에 Kotlin + Jetpack Compose 네이티브 클라이언트를 추가했습니다(**Google Play 서비스 불필요**): QR 스캔 페어링, 워크스페이스/surface 관리, ANSI 터미널 미러링, CMD/LIVE 입력 패널과 단축키, 이벤트 Inbox — iOS와 같은 4탭 셸(Workspaces / Active / Inbox / Settings).
 - 🔔 **네이티브 푸시 알림 (APNs)** — cmux 이벤트와 Claude/Codex 계열 `needs input` 프롬프트를 relay가 APNs로 직접 보냅니다. relay에 `apns` 블록을 설정하면 앱이 백그라운드·종료 상태여도 배너가 도착하고, 설정하지 않으면 기존 로컬 알림으로 자동 폴백합니다.
 - ⌨️ **Ctrl-C 단축키** — 실행 중인 명령을 끊을 수 있도록 터미널 키보드 바에 전용 Ctrl-C 키를 추가했습니다.
 - 🖼️ **App Store 스크린샷 5장 전체 교체** — 최신 워크스페이스 · 터미널 · 키보드 · Inbox · 설정 화면을 반영했습니다.
@@ -99,7 +101,7 @@ cmux는 AI 코딩 에이전트를 굴리기에 훌륭한 Mac 네이티브 터미
 ## 아키텍처
 
 ```
-iPhone (iOS 17+)         Tailscale            Mac
+iPhone / Android         Tailscale            Mac
 ┌─────────────────────┐                       ┌────────────────────────────────┐
 │ cmux Remote (앱)    │── HTTP + WS ─────────▶│ cmux-relay (Swift, launchd)    │
 │  · 작업공간 목록    │   (Tailscale가 암호화)│  · HTTP/1.1 라우트             │
@@ -223,11 +225,14 @@ cmux 소스 코드는 이 저장소에 포함되지 않습니다. 문서화된 J
 - Direct 모드는 Tailscale 로그인, Server 모드는 자체 호스팅 Broker 필요
 - Direct 모드는 빈 TCP 포트(기본 `4399`), Broker 전용 모드는 포트 불필요
 
-### iPhone
+### 폰
 
-- iOS 17 이상
-- Direct 모드는 Mac과 같은 Tailnet, Server 모드는 iPhone VPN 불필요
-- 사이드로딩용 Apple Developer 계정 (개인 무료 7일 인증서로도 가능)
+- **iPhone**: iOS 17 이상 + 사이드로딩용 Apple Developer 계정
+  (개인 무료 7일 인증서로도 가능)
+- **Android**: Android 8.0 (API 26) 이상. Android Studio 또는
+  Gradle 8.x + JDK 17로 빌드. Google Play 서비스 불필요 — QR 스캔은
+  ZXing 기반.
+- Direct 모드는 Mac과 같은 Tailnet, Server 모드는 폰에 VPN 불필요
 
 ### 네트워크
 
@@ -340,11 +345,13 @@ cmux-relay pair --url-only
 stdin으로 읽으면 쉘 히스토리와 `ps` 에도 남지 않습니다. 터미널에는 마스킹된
 형태만 출력됩니다.
 
-iPhone에서 **Settings → Connection**, 모드를 `SERVER`로 바꾸면
-**[ SCAN QR FROM MAC ]** 버튼이 나타납니다. 스캔하면 세 필드가 채워지지만
-자동으로 재연결하지는 않습니다 — 잘못 스캔한 것이 동작하는 설정을 조용히 덮어쓰는 상황을
-피하기 위해 **[ SAVE & RECONNECT ]** 를 사용자가 누릅니다. 페이로드는
-`cmux://pair` URL이므로 iOS 기본 카메라로 스캔해도 앱으로 돌아옵니다.
+폰에서 **Settings → Connection**(Android는 미페어링 시 첫 화면에 바로 표시),
+모드를 `SERVER`로 바꾸면 **[ SCAN QR FROM MAC ]** 버튼이 나타납니다.
+iOS에서는 스캔하면 세 필드가 채워지지만 자동으로 재연결하지는 않습니다 —
+잘못 스캔한 것이 동작하는 설정을 조용히 덮어쓰는 상황을 피하기 위해
+**[ SAVE & RECONNECT ]** 를 사용자가 누릅니다. Android는 스캔 즉시
+자동 연결됩니다. 페이로드는 `cmux://pair` URL이므로 시스템 카메라나
+아무 QR 스캐너로 스캔해도 앱으로 돌아옵니다.
 
 > **QR 코드 자신이 보안 자산입니다.** 페어링 코드가 평문으로 들어있으며,
 > Broker의 `register`는 코드를 소모하지 않으므로 재사용 가능합니다. 스크린샷 /
@@ -528,7 +535,8 @@ SERVICE="gui/$(id -u)/com.genie.cmuxremote"
 - [ ] v1.2 — iPad 레이아웃, 외장 키보드 폴리시
 - [ ] v1.3 — cmux "open in pane" 인텐트용 파일 프리뷰
 - [ ] v2.0 — 고빈도 TUI(vim, htop, k9s) 대상 바이트스트림 RPC
-- [ ] 혹시 — Android 클라이언트 (PR 환영, `docs/specs/` 참고)
+- [x] Android 클라이언트 — Kotlin + Jetpack Compose (`android/`), QR 페어링,
+      iOS와 동일한 4탭 UI와 기능 세트, Google Play 서비스 불필요
 
 명시적 비목표: 공용 인터넷 노출(Tailscale Funnel), 멀티유저 공유,
 라이브 세션 외부의 서버측 영속 저장.
@@ -565,6 +573,13 @@ cmux-remote/
 │     ├─ UI/                # Tokyo Night 테마, 스플래시, Metal 셰이더
 │     ├─ Security/          # HardeningCheck
 │     └─ Storage/           # Keychain
+├─ android/
+│  └─ app/src/main/java/com/genie/cmuxremote/
+│     ├─ net/               # Endpoint, RelayClient (OkHttp WS RPC), Protocol
+│     ├─ term/              # AnsiParser, ScreenState (diff/checksum)
+│     ├─ state/             # AppViewModel (연결, 자격증명, 워크스페이스, Inbox)
+│     └─ ui/                # MainShell 4탭 셸 + Connect/Workspace/Terminal/
+│                           #   Inbox/Settings 화면 (Compose)
 └─ scripts/
    ├─ install-launchd.sh    # cmux-relay launchd 설치
    ├─ uninstall-launchd.sh
@@ -588,6 +603,9 @@ swift test
 
 # iOS 앱 Xcode 프로젝트 생성
 cd ios && xcodegen generate
+
+# Android APK 빌드 (app/build/outputs/apk/debug/app-debug.apk 생성)
+cd android && gradle :app:assembleDebug
 
 # 시뮬레이터에서 iOS 테스트 (Fake RPC 디스패치)
 xcodebuild test -project CmuxRemote.xcodeproj \

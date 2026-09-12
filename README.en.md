@@ -2,12 +2,14 @@
 
 # cmux Remote
 
-> Unofficial iPhone remote for [cmux](https://github.com/manaflow-ai/cmux)
-> on your Mac, over Tailscale or your own VPS.
+> Unofficial iPhone / Android remote for
+> [cmux](https://github.com/manaflow-ai/cmux) on your Mac, over Tailscale
+> or your own VPS.
 
-cmux Remote is a SwiftUI app + Swift daemon pair that lets you read and
-drive the terminals running inside cmux on your Mac. Direct mode uses your
-Tailscale tailnet. The optional Server mode lets both the iPhone and Mac make
+cmux Remote is a phone app + Swift daemon pair that lets you read and
+drive the terminals running inside cmux on your Mac — a SwiftUI app on
+iPhone and a Kotlin + Jetpack Compose app on Android. Direct mode uses your
+Tailscale tailnet. The optional Server mode lets both the phone and Mac make
 outbound TLS connections through a Broker on a VPS you control.
 
 > **No Tailscale on the phone:** see the
@@ -28,6 +30,11 @@ cmux exclusively over a documented JSON-RPC protocol.
 
 New or changed since v1.0.5:
 
+- 🤖 **Android client (new)** — `android/` adds a native Kotlin + Jetpack
+  Compose client (**no Google Play Services required**): QR scan pairing,
+  workspace/surface management, ANSI terminal mirroring, the CMD/LIVE input
+  panel with shortcut keys, and the event Inbox — same four-tab shell as iOS
+  (Workspaces / Active / Inbox / Settings).
 - 🔔 **Native push notifications (APNs)** — the relay delivers cmux events and Claude/Codex-style `needs input` prompts over APNs. Configure an `apns` block on the relay and banners arrive even when the app is backgrounded or killed; leave it unset and it falls back to the existing local notifications.
 - ⌨️ **Ctrl-C shortcut** — a dedicated Ctrl-C key on the terminal keyboard bar to interrupt a running command.
 - 🖼️ **All five App Store screenshots refreshed** — latest workspace, terminal, keyboard, Inbox, and settings screens.
@@ -105,7 +112,7 @@ the work — the iPhone is just a remote.
 ## Architecture
 
 ```
-iPhone (iOS 17+)         Tailscale            Mac
+iPhone / Android         Tailscale            Mac
 ┌─────────────────────┐                       ┌────────────────────────────────┐
 │ cmux Remote (app)   │── HTTP + WS ─────────▶│ cmux-relay (Swift, launchd)    │
 │  · workspace list   │   (Tailscale encrypts)│  · HTTP/1.1 routes             │
@@ -250,12 +257,15 @@ client that talks to cmux over a documented JSON-RPC schema.
 - Tailscale installed and signed in for Direct mode, or a self-hosted Broker
 - A free TCP port (`4399`) for Direct mode; none is needed for Broker-only mode
 
-### iPhone
+### Phone
 
-- iOS 17 or newer
+- **iPhone**: iOS 17+, an Apple Developer account for sideloading (the
+  free 7-day personal cert works; App Store distribution needs a paid
+  account)
+- **Android**: Android 8.0 (API 26)+; builds with Android Studio or
+  Gradle 8.x + JDK 17. No Google Play Services needed — QR scanning runs
+  on ZXing.
 - Same Tailnet as your Mac in Direct mode; no phone VPN is needed in Server mode
-- Apple Developer account for sideloading (the free 7-day personal
-  cert works; App Store distribution needs a paid account)
 
 ### Network
 
@@ -339,12 +349,18 @@ Open cmux Remote on the iPhone:
 2. Enter the Tailscale IP or MagicDNS name from above, port `4399`
 3. **Add** — the relay resolves your Tailscale identity and pairs
 
-The relay auto-authorises its own Mac's tailnet login, so an iPhone on the
+The relay auto-authorises its own Mac's tailnet login, so a phone on the
 same Tailscale account usually pairs with no extra setup. Only for a
 different account, or when the relay runs on a tagged node, add your login
 to `allow_login` under **Configuration** below (any other login gets
 `403 Forbidden`). Pairing exchanges a per-device token; revoke any device
 anytime with `~/.cmuxremote/bin/cmux-relay devices revoke <id>`.
+
+The fastest way to pair is the QR flow — run
+`~/.cmuxremote/bin/cmux-relay pair` on the Mac and scan the QR with the
+Android app (**Scan QR to pair** on the connect screen) or with the
+in-app scanner in iOS **Settings → Connection**. It fills in the server
+URL, relay id and pairing code for you, and also works through the Broker.
 
 #### QR pairing (Server mode)
 
@@ -559,7 +575,8 @@ the fastest way to re-attach after a socket rotation is
 - [ ] v1.2 — iPad layout, external keyboard polish
 - [ ] v1.3 — file preview for cmux's "open in pane" intents
 - [ ] v2.0 — byte-stream RPC for high-rate TUIs (vim, htop, k9s)
-- [ ] Maybe — Android client (PRs welcome, see `docs/specs/`)
+- [x] Android client — Kotlin + Jetpack Compose (`android/`), QR pairing,
+      the same four-tab UI and feature set as iOS, no Google Play Services
 
 Explicit non-goals: public-internet exposure (Tailscale Funnel),
 multi-user sharing, server-side persistence beyond the live session.
@@ -596,6 +613,13 @@ cmux-remote/
 │     ├─ UI/                # Tokyo Night theme, splash, Metal shader
 │     ├─ Security/          # HardeningCheck
 │     └─ Storage/           # Keychain
+├─ android/
+│  └─ app/src/main/java/com/genie/cmuxremote/
+│     ├─ net/               # Endpoint, RelayClient (OkHttp WS RPC), Protocol
+│     ├─ term/              # AnsiParser, ScreenState (diff/checksum)
+│     ├─ state/             # AppViewModel (connection, credentials, workspaces, Inbox)
+│     └─ ui/                # MainShell four-tab shell + Connect/Workspace/
+│                           #   Terminal/Inbox/Settings screens (Compose)
 └─ scripts/
    ├─ install-launchd.sh    # cmux-relay launchd installer
    ├─ uninstall-launchd.sh
@@ -620,6 +644,9 @@ swift test
 
 # Generate the Xcode project for the iOS app
 cd ios && xcodegen generate
+
+# Build the Android APK (outputs app/build/outputs/apk/debug/app-debug.apk)
+cd android && gradle :app:assembleDebug
 
 # Run the iOS test suite against a fake in-process relay
 xcodebuild test -project CmuxRemote.xcodeproj \
